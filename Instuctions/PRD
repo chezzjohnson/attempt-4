@@ -1,0 +1,282 @@
+**Product Requirements Document (PRD)**
+
+**App Name (Working Title):** PsyCompanion
+
+**Purpose:** A comprehensive companion app for psychedelic users focused on preparation, tracking, and post-trip integration. While the app supports the full lifecycle of psychedelic experiences, it intentionally limits functionality during the trip itself to encourage presence and reduce digital distraction.
+
+---
+
+**1. Core Goals:**
+
+* Provide a structured and safe environment for planning and integrating psychedelic experiences.
+* Facilitate harm reduction through safety features and guidelines.
+* Offer AI-powered journaling and personal insights post-trip.
+* Include a smart scheduling system tailored to each user's preferences.
+
+---
+
+**2. App Structure / Navigation Tabs:**
+
+* **Home (Trip Dashboard)**
+* **New Trip**
+* **History**
+* **Insights**
+* **Safety**
+
+---
+
+**3. Feature Overview:**
+
+### Home (Trip Dashboard)
+
+* Quick Stats:
+
+  * Days since last trip
+  * Next scheduled trip
+  * Integration progress
+* Recent Trips:
+
+  * Last trip summary (AI-generated)
+  * Key insights
+* Quick Actions:
+
+  * Log New Trip
+  * Schedule Trip
+  * View Integration
+
+### New Trip
+
+* Pre-Trip Checklist:
+
+  * Dose selection
+  * Substance type
+  * Set & setting check
+  * Safety guidelines
+  * Pre-trip checklist (affirmations, reassurances)
+  * Setting intentions (integrated with insights and tracking)
+  * Trip Sitter Contact (optional)
+  * Final confirmation
+
+### History
+
+* Cards for previous trips:
+
+  * Visually unique with defining emojis, texts, and optional photos
+  * Provide quick stats and trip identifiers
+  * Clicking on a card opens the trip's full detail view in the **Insights** tab
+* Upcoming scheduled trips (also displayed as cards)
+* Smart scheduling system
+* Calendar integration
+* Trip frequency preferences
+
+### Insights
+
+* Full detail view of past trips
+* Trip patterns
+* Integration progress (moved from History)
+* Personal growth tracking
+* Self-Assessment Scores
+* Intention tracking:
+
+  * View of set intentions from trip
+  * Trip rating of each intention (1-10)
+  * Follow-up self-assessments at 7, 14, and 30 days
+* AI-generated summaries from text/t2s journals
+* Key learnings
+* Follow-up reminders and journaling
+
+### Safety
+
+* Safety guidelines
+* Trip Sitter Contact (optional)
+* Dosage information
+* Harm reduction tips
+* Integration resources
+
+---
+
+**4. Active Trip Mode (Minimal Interface)**
+
+* **Locked Mode:**
+
+  * Only one screen visible
+  * Navigation locked
+  * Trip Sitter button always available (optional, with double confirmation)
+
+* **Trip Timeline Display:**
+
+  * Total trip duration
+  * Current phase (come-up, peak, comedown)
+  * Time remaining in phase
+  * Visual progress bar (elapsed vs. remaining)
+
+* **Phase Information:**
+
+  * Indication of current phase
+  * Time until next phase
+  * Description of what to expect
+  * Simple, calming visuals
+
+* **Intentions Reminder:**
+
+  * View of intentions set before trip
+  * Periodic display/reminders
+  * Ability to attach notes (text or t2s) to each intention during the trip
+
+* **Note Taking:**
+
+  * Create general notes (text or t2s)
+  * Attach notes to specific intentions
+
+---
+
+**5. Data Tracking & AI Features:**
+
+* Trip data (date, dose, substance, setting)
+* Integration notes (text + t2s)
+* AI-generated summaries (including intentions and associated notes)
+* Journal entries (manual + voice → AI transcription)
+* Intention tracking:
+
+  * Post-trip rating of each intention (scale of 1-10)
+  * Follow-up self-assessments at 7, 14, and 30 days (e.g., “How well has intention X been integrated?”)
+
+---
+
+**6. Trip Scheduling System:**
+
+* **User Preferences:**
+
+  * Frequency (e.g., every 3-4 months)
+  * Preferred days (weekends, weekdays)
+  * Avoid specific dates
+  * Required buffer time before/after
+
+* **Smart Scheduling:**
+
+  * Connects to calendar (Google, Apple, Outlook, iCal)
+  * Scans for availability
+  * Filters based on preferences
+  * Suggests optimal windows
+
+* **Workflow:**
+
+  * Suggest date range
+  * User accepts, adjusts, or declines
+  * App sends reminders & confirmations
+
+---
+
+**7. Calendar & Reminder Integrations:**
+
+* Google Calendar
+* Apple Calendar
+* Outlook Calendar
+* iCal support
+
+**Key Benefits:**
+
+* Avoid scheduling conflicts
+* Ensure preparation time
+* Maintain consistent trip spacing
+* Reduce planning burden
+
+---
+
+**8. Monetization (Future Scope):**
+
+* Freemium model
+
+  * Free for basic features
+  * Subscription for advanced insights, calendar sync, AI analytics, intention tracking, etc.
+
+---
+
+**9. Phase 1 Priorities (MVP):**
+
+* New Trip Flow
+* Home dashboard
+* Basic History tracking with visual trip cards
+* Safety tab
+* Locked trip mode with visuals + Trip Sitter button
+* Journal + voice input (AI summary optional in phase 2)
+* Simple scheduler (manual)
+
+---
+
+**10. Later Phases:**
+
+* AI-generated insights
+* Full smart scheduling with calendar sync
+* Intention tracking and integration analytics
+* Follow-up reminder system (7d, 14d, 30d reflections)
+* In-app notifications and reminders
+
+---
+
+**11. Design Notes:**
+
+* Calm, grounding UI (soft colors, minimal animation)
+* Strong focus on user safety and simplicity during trip
+* Low-stimulation visuals
+
+---
+
+**12. Technical Stack Overview**
+
+**Frontend:** React Native (with Expo)
+
+* Mobile app interface
+* Navigation, user input, and display logic
+
+**Backend:** Node.js with Express
+
+* Handles API requests
+* Stores and retrieves trip, intention, journal, and user data
+
+**Database:** PostgreSQL
+
+* Structured data storage (trips, intentions, notes, reminders, users)
+
+**Authentication:** Firebase Auth or Supabase Auth
+
+* Email/password or OAuth login
+
+**Transcription:** OpenAI Whisper API (or Deepgram)
+
+* Converts voice notes to text immediately (no audio stored)
+
+**Hosting:** Render or Vercel
+
+* Hosts backend and serves API endpoints
+
+**Diagram:**
+
+```
+User (Mobile App)
+   ↓ React Native (Expo)
+API Calls
+   ↓
+Node.js (Express Backend)
+   → PostgreSQL (Database)
+   → Whisper API (Speech to Text)
+   → Firebase/Supabase (Authentication)
+
+Hosting: Render or Vercel
+```
+
+This stack supports long-term scaling, integrates with AI and voice, and is fully compatible with mobile-first development.
+
+---
+
+**Next Steps:**
+
+1. Wireframes for each screen (prioritize MVP)
+2. Define data model for trips, journal entries, intentions, and preferences
+3. Set up backend for user and trip data
+4. Outline logic for scheduling system (manual first)
+5. Develop Trip Sitter flow (what happens when the Trip Sitter button is pressed)
+
+---
+
+Let me know when you're ready to wireframe or spec out user flows.

@@ -1,0 +1,218 @@
+// Backend Logic
+// Using Express-compatible Firebase Functions setup.
+
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+admin.initializeApp();
+const db = admin.firestore();fd
+
+/**
+ * DATA FLOW OVERVIEW:
+ * - Intentions are set pre-trip and tracked throughout the experience.
+ * - During the trip, notes can be attached to each intention.
+ * - After the trip, the user provides integration ratings for each intention.
+ * - Integration = user-defined success in following through on an intention.
+ * - Follow-ups (7d, 14d, 30d, etc.) measure how well those intentions have continued to integrate.
+ * - History contains trip summaries, but detailed integration progress lives in Insights.
+ */
+
+// 1. Create New Trip
+exports.createTrip = functions.https.onCall(async (data, context) => {
+  const { userId, title, substance, dose, date, location, set, setting, emojis, sitterContactId } = data;
+  const tripRef = await db.collection('trips').add({
+    userId,
+    title,
+    substance,
+    dose,
+    date: new Date(date),
+    location,
+    set,
+    setting,
+    emojis,
+    sitterContactId,
+    status: 'upcoming',
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return { tripId: tripRef.id };
+});
+
+// 2. Add Intention to Trip
+exports.addIntention = functions.https.onCall(async (data, context) => {
+  const { text, tripId, tags = [] } = data;
+  
+  // Check if intention already exists
+  const existingIntention = await db.collection('intentions')
+    .where('text', '==', text)
+    .limit(1)
+    .get();
+
+  let intentionRef;
+  
+  if (existingIntention.empty) {
+    // Create new intention
+    intentionRef = await db.collection('intentions').add({
+      text,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      tags,
+      status: 'active',
+      trips: {
+        [tripId]: {
+          preTripNotes: '',
+          duringTripNotes: '',
+          postTripNotes: '',
+          integrationRating: null,
+          followUps: {}
+        }
+      }
+    });
+  } else {
+    // Add trip to existing intention
+    intentionRef = existingIntention.docs[0].ref;
+    await intentionRef.update({
+      [`trips.${tripId}`]: {
+        preTripNotes: '',
+        duringTripNotes: '',
+        postTripNotes: '',
+        integrationRating: null,
+        followUps: {}
+      }
+    });
+  }
+  
+  return { intentionId: intentionRef.id };
+});
+
+// 3. Submit Note for Trip Phase (applies to general or specific intention)
+exports.submitNote = functions.https.onCall(async (data, context) => {
+  const { tripId, text, phase, intentionId = null } = data;
+  const noteRef = await db.collection('notes').add({
+    tripId,
+    text,
+    phase,
+    intentionId,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  return { noteId: noteRef.id };
+});
+
+// 4. Update Integration Rating
+exports.updateIntegrationRating = functions.https.onCall(async (data, context) => {
+  const { intentionId, tripId, day, integrationRating, notes } = data;
+  const updateField = `trips.${tripId}.followUps.${day}`;
+  
+  await db.collection('intentions').doc(intentionId).update({
+    [updateField]: { integrationRating, notes }
+  });
+  
+  return { success: true };
+});
+
+// 5. Get User Trips & Insights (history = list view; insights = detail + integration tracking)
+exports.getUserTrips = functions.https.onCall(async (data, context) => {
+  const { userId } = data;
+  const tripsSnapshot = await db.collection('trips')
+    .where('userId', '==', userId)
+    .orderBy('date', 'desc')
+    .get();
+
+  const trips = [];
+  for (const doc of tripsSnapshot.docs) {
+    const intentionsSnapshot = await db.collection('intentions')
+      .where('tripId', '==', doc.id)
+      .get();
+
+    const intentions = intentionsSnapshot.docs.map(i => ({
+      intentionId: i.id,
+      ...i.data()
+    }));
+
+    trips.push({
+      tripId: doc.id,
+      ...doc.data(),
+      intentions
+    });
+  }
+
+  return { trips };
+});
+
+// 6. Add Supported Substances
+exports.addSubstance = functions.https.onCall(async (data, context) => {
+  const { name, doses } = data;
+  const ref = await db.collection('substances').add({ name, doses });
+  return { substanceId: ref.id };
+});
+
+// 7. Save Calendar Preferences
+exports.setCalendarPreferences = functions.https.onCall(async (data, context) => {
+  const { userId, weekendsOnly, bufferHoursBefore, bufferHoursAfter, blockedDates } = data;
+  await db.collection('calendarPreferences').doc(userId).set({
+    userId,
+    weekendsOnly,
+    bufferHoursBefore,
+    bufferHoursAfter,
+    blockedDates
+  });
+  return { success: true };
+});
+
+// 8. Add Contact (Trip Sitter)
+exports.addContact = functions.https.onCall(async (data, context) => {
+  const { userId, name, phone, email, role } = data;
+  const ref = await db.collection('contacts').add({
+    userId,
+    name,
+    phone,
+    email,
+    role
+  });
+  return { contactId: ref.id };
+});
+
+// 9. Get Intentions with Cross-Trip Data
+exports.getIntentionsWithCrossTripData = functions.https.onCall(async (data, context) => {
+  const { userId, sortBy = 'recent' } = data;
+  
+  let query = db.collection('intentions');
+  
+  // Apply sorting
+  switch(sortBy) {
+    case 'recent':
+      query = query.orderBy('createdAt', 'desc');
+      break;
+    case 'integration':
+      // This would require a more complex query or client-side sorting
+      break;
+    case 'followup':
+      // This would require a more complex query or client-side sorting
+      break;
+  }
+  
+  const intentionsSnapshot = await query.get();
+  
+  const intentions = [];
+  for (const doc of intentionsSnapshot.docs) {
+    const intentionData = doc.data();
+    
+    // Get all trips for this intention
+    const tripIds = Object.keys(intentionData.trips || {});
+    const tripsData = await Promise.all(
+      tripIds.map(async tripId => {
+        const tripDoc = await db.collection('trips').doc(tripId).get();
+        return {
+          tripId,
+          ...tripDoc.data(),
+          intentionData: intentionData.trips[tripId]
+        };
+      })
+    );
+    
+    intentions.push({
+      intentionId: doc.id,
+      ...intentionData,
+      trips: tripsData
+    });
+  }
+  
+  return { intentions };
+});
