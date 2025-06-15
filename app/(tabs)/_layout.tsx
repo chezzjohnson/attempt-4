@@ -36,7 +36,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="safety"
         options={{
-          title: 'Safety',
+          title: 'Safety Guide',
           tabBarIcon: ({ color }) => <MaterialIcons name="security" size={24} color={color} />,
         }}
       />
