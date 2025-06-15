@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import type { Intention, Note, TripHistory } from '../../contexts/TripContext';
 import { useTrip } from '../../contexts/TripContext';
@@ -154,20 +154,121 @@ export default function HistoryScreen() {
   };
 
   const renderTripCard = (trip: TripHistory) => {
-    const isExpanded = expandedTrip === trip.id;
-    const ratingData = getRatingData(trip);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedIntention, setExpandedIntention] = useState<string | null>(null);
+    const router = useRouter();
     const hasIntentions = trip.intentions && trip.intentions.length > 0;
+    const hasRatings = trip.intentions.some(intention => 
+      intention.ratings && intention.ratings.some(rating => rating.value !== null)
+    );
+
+    const getFollowUpButton = (type: '7-day' | '14-day' | '30-day', intention: Intention) => {
+      const hasFollowUpRating = intention.ratings?.some((rating: { type: string; value: number | null }) => 
+        rating.type === type && rating.value !== null
+      );
+
+      // Calculate days since trip
+      const tripEndTime = new Date(trip.endTime);
+      const now = new Date();
+      const daysSinceTrip = Math.floor((now.getTime() - tripEndTime.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Check if enough time has passed
+      const isAvailable = (() => {
+        switch (type) {
+          case '7-day':
+            return daysSinceTrip >= 7;
+          case '14-day':
+            return daysSinceTrip >= 14;
+          case '30-day':
+            return daysSinceTrip >= 30;
+          default:
+            return false;
+        }
+      })();
+
+      if (hasFollowUpRating) {
+        return (
+          <View style={styles.followUpButton}>
+            <MaterialIcons name="check-circle" size={20} color="#10B981" />
+            <Text style={[styles.followUpButtonText, { color: '#10B981' }]}>
+              {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Rated
+            </Text>
+          </View>
+        );
+      }
+
+      if (!isAvailable) {
+        const daysRemaining = (() => {
+          switch (type) {
+            case '7-day':
+              return 7 - daysSinceTrip;
+            case '14-day':
+              return 14 - daysSinceTrip;
+            case '30-day':
+              return 30 - daysSinceTrip;
+            default:
+              return 0;
+          }
+        })();
+
+        return (
+          <View style={[styles.followUpButton, styles.followUpButtonDisabled]}>
+            <MaterialIcons name="schedule" size={20} color="#9CA3AF" />
+            <Text style={[styles.followUpButtonText, { color: '#9CA3AF' }]}>
+              {daysRemaining}d left
+            </Text>
+          </View>
+        );
+      }
+
+      return (
+        <TouchableOpacity
+          style={styles.followUpButton}
+          onPress={() => router.push({
+            pathname: '/trip/follow-up',
+            params: { tripId: trip.id, followUpType: type }
+          })}
+        >
+          <MaterialIcons name="schedule" size={20} color="#5196F4" />
+          <Text style={styles.followUpButtonText}>
+            {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Follow-up
+          </Text>
+        </TouchableOpacity>
+      );
+    };
+
+    const getIntentionRatingData = (intention: Intention) => {
+      if (!intention.ratings?.length) return null;
+
+      const categories = [
+        { type: 'post-trip', label: 'Post' },
+        { type: '7-day', label: '7d' },
+        { type: '14-day', label: '14d' },
+        { type: '30-day', label: '30d' }
+      ];
+
+      return {
+        labels: categories.map(cat => cat.label),
+        datasets: [{
+          data: categories.map(cat => {
+            const rating = intention.ratings?.find(r => r.type === cat.type);
+            return rating?.value || 0;
+          })
+        }]
+      };
+    };
+
+    const ratingData = getRatingData(trip);
 
     return (
-      <Pressable
-        key={trip.id}
-        style={[styles.tripCard, isExpanded && styles.expandedCard]}
-        onPress={() => setExpandedTrip(isExpanded ? null : trip.id)}
-      >
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.dateText}>{formatDate(trip.startTime)}</Text>
-            <Text style={styles.timeText}>
+      <View style={styles.tripCard}>
+        <TouchableOpacity
+          style={styles.tripHeader}
+          onPress={() => setIsExpanded(!isExpanded)}
+        >
+          <View style={styles.tripHeaderContent}>
+            <Text style={styles.tripDate}>{formatDate(trip.startTime)}</Text>
+            <Text style={styles.tripTime}>
               {formatTime(trip.startTime)} - {formatTime(trip.endTime)}
             </Text>
           </View>
@@ -176,166 +277,178 @@ export default function HistoryScreen() {
             size={24}
             color="#666"
           />
-        </View>
+        </TouchableOpacity>
 
         {isExpanded && (
-          <>
+          <View style={styles.tripContent}>
             {/* Dose Information */}
-            {trip.dose && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Dose</Text>
-                <View style={styles.doseInfo}>
-                  <Text style={styles.doseName}>{trip.dose.name}</Text>
-                  <Text style={styles.doseRange}>{trip.dose.range}</Text>
-                  <Text style={styles.doseDescription}>{trip.dose.description}</Text>
-                </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Dose Information</Text>
+              <View style={styles.doseInfo}>
+                <Text style={styles.doseText}>
+                  {trip.dose ? `${trip.dose.name} (${trip.dose.range})` : 'No dose recorded'}
+                </Text>
               </View>
-            )}
+            </View>
 
             {/* Intentions */}
-            {hasIntentions && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Intentions</Text>
-                {trip.intentions.map((intention: Intention) => (
-                  <View key={intention.id} style={styles.intentionCard}>
-                    <View style={styles.intentionHeader}>
-                      <Text style={styles.intentionEmoji}>{intention.emoji}</Text>
-                      <Text style={styles.intentionText}>{intention.text}</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Intentions</Text>
+              {trip.intentions.map(intention => (
+                <View key={intention.id} style={styles.intentionCard}>
+                  <View style={styles.intentionHeader}>
+                    <View style={styles.intentionHeaderContent}>
+                      <Text style={styles.emoji}>{intention.emoji}</Text>
+                      <View style={styles.intentionTitleContainer}>
+                        <Text style={styles.intentionText}>{intention.text}</Text>
+                        {intention.description && (
+                          <Text style={styles.intentionDescription}>
+                            {intention.description}
+                          </Text>
+                        )}
+                      </View>
                     </View>
-                    {intention.description && (
-                      <Text style={styles.intentionDescription}>{intention.description}</Text>
-                    )}
-                    {intention.ratings && intention.ratings.length > 0 && (
-                      <View style={styles.ratingsContainer}>
-                        {intention.ratings.map((rating: { type: string; value: number | null }, index: number) => (
-                          <View key={index} style={styles.ratingItem}>
-                            <Text style={styles.ratingType}>{rating.type}</Text>
-                            <Text style={styles.ratingValue}>
-                              {rating.value !== null ? rating.value : 'Not rated'}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    {intention.notes && intention.notes.length > 0 && (
-                      <View style={styles.notesContainer}>
-                        {intention.notes.map((note: Note) => (
-                          <View key={note.id} style={styles.noteItem}>
-                            <Text style={styles.noteContent}>{note.content}</Text>
-                            <Text style={styles.noteTimestamp}>
-                              {new Date(note.timestamp).toLocaleString()}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                    <TouchableOpacity
+                      onPress={() => setExpandedIntention(
+                        expandedIntention === intention.id ? null : intention.id
+                      )}
+                    >
+                      <MaterialIcons
+                        name={expandedIntention === intention.id ? 'expand-less' : 'expand-more'}
+                        size={24}
+                        color="#666"
+                      />
+                    </TouchableOpacity>
                   </View>
-                ))}
-              </View>
-            )}
+
+                  {expandedIntention === intention.id && (
+                    <View style={styles.intentionContent}>
+                      {/* Rating Progress Chart */}
+                      {getIntentionRatingData(intention) && (
+                        <View style={styles.ratingChartContainer}>
+                          <Text style={styles.ratingChartTitle}>Rating Progress</Text>
+                          <View style={styles.chartWrapper}>
+                            <LineChart
+                              data={getIntentionRatingData(intention)!}
+                              width={SCREEN_WIDTH - 112}
+                              height={180}
+                              chartConfig={{
+                                backgroundColor: '#ffffff',
+                                backgroundGradientFrom: '#ffffff',
+                                backgroundGradientTo: '#ffffff',
+                                decimalPlaces: 0,
+                                color: (opacity = 1) => `rgba(81, 150, 244, ${opacity})`,
+                                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                                style: {
+                                  borderRadius: 16
+                                },
+                                propsForDots: {
+                                  r: '0',
+                                  strokeWidth: '0',
+                                  stroke: 'transparent'
+                                },
+                                propsForBackgroundLines: {
+                                  strokeDasharray: '',
+                                  stroke: '#E5E7EB',
+                                  strokeWidth: 1
+                                },
+                                propsForLabels: {
+                                  fontSize: 12
+                                }
+                              }}
+                              bezier
+                              style={styles.chart}
+                              segments={4}
+                              fromZero={true}
+                              yAxisInterval={1}
+                              yAxisSuffix=""
+                              yAxisLabel=""
+                              renderDotContent={({ x, y, index }) => {
+                                const value = getIntentionRatingData(intention)!.datasets[0].data[index];
+                                if (value === 0) {
+                                  return (
+                                    <View
+                                      style={[
+                                        styles.dotLabel,
+                                        {
+                                          left: x - 10,
+                                          top: y - 20,
+                                          backgroundColor: '#E5E7EB'
+                                        }
+                                      ]}
+                                    >
+                                      <Text style={styles.dotLabelText}>-</Text>
+                                    </View>
+                                  );
+                                }
+                                return (
+                                  <View
+                                    style={[
+                                      styles.dotLabel,
+                                      {
+                                        left: x - 10,
+                                        top: y - 20
+                                      }
+                                    ]}
+                                  >
+                                    <Text style={styles.dotLabelText}>{value}</Text>
+                                  </View>
+                                );
+                              }}
+                            />
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Follow-up Rating Buttons */}
+                      <View style={styles.followUpSection}>
+                        <Text style={styles.followUpTitle}>Integration Follow-ups</Text>
+                        <View style={styles.followUpButtons}>
+                          {getFollowUpButton('7-day', intention)}
+                          {getFollowUpButton('14-day', intention)}
+                          {getFollowUpButton('30-day', intention)}
+                        </View>
+                      </View>
+
+                      {/* Notes */}
+                      {intention.notes && intention.notes.length > 0 && (
+                        <View style={styles.notesContainer}>
+                          <Text style={styles.notesTitle}>Notes</Text>
+                          {intention.notes.map((note, index) => (
+                            <View key={index} style={styles.noteItem}>
+                              <Text style={styles.noteText}>{note.content}</Text>
+                              <Text style={styles.noteTime}>
+                                {formatTime(note.timestamp)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
 
             {/* General Notes */}
             {trip.generalNotes && trip.generalNotes.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Notes</Text>
-                {trip.generalNotes.map((note: Note) => (
-                  <View key={note.id} style={styles.noteItem}>
-                    <Text style={styles.noteContent}>{note.content}</Text>
-                    <Text style={styles.noteTimestamp}>
-                      {new Date(note.timestamp).toLocaleString()}
-                    </Text>
-                  </View>
-                ))}
+                <Text style={styles.sectionTitle}>General Notes</Text>
+                <View style={styles.generalNotesContainer}>
+                  {trip.generalNotes.map((note: Note) => (
+                    <View key={note.id} style={styles.noteItem}>
+                      <Text style={styles.noteText}>{note.content}</Text>
+                      <Text style={styles.noteTime}>
+                        {formatTime(note.timestamp)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
               </View>
             )}
-
-            {/* Rating Progress Chart */}
-            {ratingData && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Rating Progress</Text>
-                <LineChart
-                  data={ratingData}
-                  width={SCREEN_WIDTH - 40}
-                  height={220}
-                  chartConfig={{
-                    backgroundColor: '#ffffff',
-                    backgroundGradientFrom: '#ffffff',
-                    backgroundGradientTo: '#ffffff',
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(81, 150, 244, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    style: {
-                      borderRadius: 16
-                    },
-                    propsForDots: {
-                      r: '0',
-                      strokeWidth: '0',
-                      stroke: 'transparent'
-                    },
-                    propsForBackgroundLines: {
-                      strokeDasharray: '',
-                      stroke: '#E5E7EB',
-                      strokeWidth: 1
-                    },
-                    propsForLabels: {
-                      fontSize: 12
-                    }
-                  }}
-                  bezier
-                  style={styles.chart}
-                  segments={4}
-                  fromZero={true}
-                  yAxisInterval={1}
-                  yAxisSuffix=""
-                  yAxisLabel=""
-                  renderDotContent={({ x, y, index }) => {
-                    const value = ratingData.datasets[0].data[index];
-                    if (value === 0) {
-                      return (
-                        <View
-                          style={[
-                            styles.dotLabel,
-                            {
-                              left: x - 10,
-                              top: y - 20,
-                              backgroundColor: '#E5E7EB'
-                            }
-                          ]}
-                        >
-                          <Text style={styles.dotLabelText}>-</Text>
-                        </View>
-                      );
-                    }
-                    return (
-                      <View
-                        style={[
-                          styles.dotLabel,
-                          {
-                            left: x - 10,
-                            top: y - 20
-                          }
-                        ]}
-                      >
-                        <Text style={styles.dotLabelText}>{value}</Text>
-                      </View>
-                    );
-                  }}
-                />
-              </View>
-            )}
-
-            {/* Rate Trip Button */}
-            {hasIntentions && !trip.postTripRated && (
-              <Pressable
-                style={styles.rateButton}
-                onPress={() => handleRateTrip(trip)}
-              >
-                <Text style={styles.rateButtonText}>Rate Integration of Intentions</Text>
-              </Pressable>
-            )}
-          </>
+          </View>
         )}
-      </Pressable>
+      </View>
     );
   };
 
@@ -382,26 +495,32 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
-  expandedCard: {
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  cardHeader: {
+  tripHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
   },
-  dateText: {
+  tripHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  tripDate: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
   },
-  timeText: {
+  tripTime: {
     fontSize: 14,
     color: '#6B7280',
     marginTop: 4,
+  },
+  tripContent: {
+    padding: 16,
+    backgroundColor: '#F9FAFB',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
   },
   section: {
     marginBottom: 20,
@@ -419,97 +538,134 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  doseName: {
+  doseText: {
     fontSize: 16,
     fontWeight: '500',
     color: '#1F2937',
   },
-  doseRange: {
-    fontSize: 14,
-    color: '#4B5563',
-    marginTop: 4,
-  },
-  doseDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 8,
-  },
   intentionCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    marginBottom: 16,
+    overflow: 'hidden',
   },
   intentionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  intentionEmoji: {
-    fontSize: 20,
-    marginRight: 8,
+  intentionHeaderContent: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  intentionTitleContainer: {
+    flex: 1,
+    marginLeft: 12,
   },
   intentionText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#1F2937',
-    flex: 1,
+    marginBottom: 4,
   },
   intentionDescription: {
     fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  ratingsContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  ratingItem: {
-    marginBottom: 8,
-  },
-  ratingType: {
-    fontSize: 14,
-    fontWeight: '500',
     color: '#4B5563',
-    marginBottom: 2,
+    lineHeight: 20,
   },
-  ratingValue: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  notesContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  noteItem: {
-    marginBottom: 8,
-  },
-  noteContent: {
-    fontSize: 14,
-    color: '#1F2937',
-    marginBottom: 2,
-  },
-  noteTimestamp: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  rateButton: {
-    backgroundColor: '#0967D2',
-    borderRadius: 8,
+  intentionContent: {
     padding: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  emoji: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  chartWrapper: {
     alignItems: 'center',
     marginTop: 8,
   },
-  rateButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  ratingChartContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  ratingChartTitle: {
+    fontSize: 14,
     fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  followUpSection: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  followUpTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  followUpButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  followUpButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  followUpButtonDisabled: {
+    opacity: 0.7,
+  },
+  followUpButtonText: {
+    marginLeft: 4,
+    fontSize: 14,
+    color: '#5196F4',
+  },
+  notesContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  notesTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  noteItem: {
+    marginBottom: 12,
+  },
+  noteText: {
+    fontSize: 14,
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  noteTime: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   emptyState: {
     flex: 1,
@@ -539,5 +695,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  generalNotesContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
 }); 
