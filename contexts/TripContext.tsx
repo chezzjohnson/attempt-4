@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { TripSitter } from './TripSitterContext';
 
 interface Intention {
   id: string;
@@ -7,13 +8,12 @@ interface Intention {
   description: string;
 }
 
-interface SafetyCheck {
+export interface SafetyCheck {
   environment: boolean;
-  sitter: boolean;
   mental: boolean;
-  medications: boolean;
-  supplies: boolean;
-  emergency: boolean;
+  emergencyPlan: boolean;
+  tripSitter: boolean;
+  tripSitterInfo?: TripSitter | { name: string; phone: string; relationship: string } | null;
 }
 
 interface TripState {
@@ -57,11 +57,10 @@ const initialState: TripState = {
   setting: '',
   safety: {
     environment: false,
-    sitter: false,
     mental: false,
-    medications: false,
-    supplies: false,
-    emergency: false,
+    emergencyPlan: false,
+    tripSitter: false,
+    tripSitterInfo: null,
   },
   tripSitter: null,
   intentions: [],

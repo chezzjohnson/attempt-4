@@ -1,219 +1,180 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTrip } from '../../contexts/TripContext';
+import { TripSitter, useTripSitter } from '../../contexts/TripSitterContext';
 
 interface SafetyCheck {
   environment: boolean;
   mental: boolean;
-  supplies: boolean;
-  emergency: boolean;
-  sitter: boolean;
-  medications: boolean;
+  emergencyPlan: boolean;
+  tripSitter: boolean;
+  tripSitterInfo?: TripSitter | { name: string; phone: string; relationship: string } | null;
 }
-
-const SAFETY_ITEMS: Record<keyof SafetyCheck, string> = {
-  environment: 'Safe environment',
-  mental: 'Good mental state',
-  supplies: 'Necessary supplies',
-  emergency: 'Emergency plan',
-  sitter: 'Trip sitter available',
-  medications: 'Medications checked',
-};
 
 const REQUIRED_ITEMS: (keyof SafetyCheck)[] = ['environment', 'mental'];
 
 const initialSafetyState: SafetyCheck = {
-  environment: true,  // Pre-checked from setting screen
-  mental: true,       // Pre-checked from set screen
-  supplies: false,
-  emergency: false,
-  sitter: false,
-  medications: false,
+  environment: true,
+  mental: true,
+  emergencyPlan: false,
+  tripSitter: false,
+  tripSitterInfo: null
+};
+
+const SAFETY_ITEMS: Record<keyof SafetyCheck, string> = {
+  environment: 'Safe environment',
+  mental: 'Good mental state',
+  emergencyPlan: 'Backup plan',
+  tripSitter: 'Trip sitter',
+  tripSitterInfo: 'Trip sitter info'
 };
 
 export default function SafetyScreen() {
   const router = useRouter();
-  const { tripState, updateSafety, updateTripSitter } = useTrip();
-  const [isEditingSitter, setIsEditingSitter] = useState(false);
-  const [sitterForm, setSitterForm] = useState({
+  const { updateSafety } = useTrip();
+  const { tripSitters, isLoading } = useTripSitter();
+  const [safetyCheck, setSafetyCheck] = useState<SafetyCheck>(initialSafetyState);
+  const [selectedSitterId, setSelectedSitterId] = useState<string | null>(null);
+  const [showSitterForm, setShowSitterForm] = useState(false);
+  const [newSitter, setNewSitter] = useState({
     name: '',
-    phoneNumber: '',
+    phone: '',
     relationship: '',
   });
 
-  // Initialize safety state if not already set
-  React.useEffect(() => {
-    if (!tripState.safety.environment && !tripState.safety.mental) {
-      updateSafety(initialSafetyState);
-    }
-  }, []);
-
-  const handleChecklistItemToggle = (key: keyof SafetyCheck) => {
-    updateSafety({
-      ...tripState.safety,
-      [key]: !tripState.safety[key],
-    });
+  const toggleCheck = (item: keyof SafetyCheck) => {
+    setSafetyCheck(prev => ({
+      ...prev,
+      [item]: !prev[item],
+    }));
   };
-
-  const handleSitterSave = () => {
-    updateTripSitter(sitterForm);
-    updateSafety({
-      ...tripState.safety,
-      sitter: true,
-    });
-    setIsEditingSitter(false);
-  };
-
-  const handleSitterEdit = () => {
-    if (tripState.tripSitter) {
-      setSitterForm(tripState.tripSitter);
-    }
-    setIsEditingSitter(true);
-  };
-
-  const handleSitterRemove = () => {
-    updateTripSitter(null);
-    updateSafety({
-      ...tripState.safety,
-      sitter: false,
-    });
-  };
-
-  const allRequiredChecked = REQUIRED_ITEMS.every(
-    (key) => tripState.safety[key]
-  );
 
   const handleContinue = () => {
+    const allRequiredChecked = REQUIRED_ITEMS.every(item => safetyCheck[item]);
     if (allRequiredChecked) {
+      updateSafety({
+        ...safetyCheck,
+        tripSitterInfo: selectedSitterId 
+          ? tripSitters.find(s => s.id === selectedSitterId)
+          : newSitter.name ? newSitter : null,
+      });
       router.push('/new-trip/intentions');
     }
   };
 
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0967D2" />
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Safety Checklist</Text>
-          <Text style={styles.subtitle}>
-            Please confirm each safety measure before proceeding
-          </Text>
-        </View>
+        <Text style={styles.title}>Safety Checklist</Text>
+        <Text style={styles.subtitle}>
+          Please confirm these safety measures before proceeding
+        </Text>
 
         {/* Safety Checklist */}
         <View style={styles.checklist}>
-          {Object.entries(tripState.safety).map(([key, checked]) => (
-            <TouchableOpacity
-              key={key}
-              style={styles.checklistItem}
-              onPress={() => handleChecklistItemToggle(key as keyof SafetyCheck)}
-            >
-              <View style={[styles.checkbox, checked && styles.checkedBox]}>
-                {checked && <MaterialIcons name="check" size={20} color="white" />}
-              </View>
-              <View style={styles.checklistContent}>
-                <Text style={styles.checklistText}>
-                  {SAFETY_ITEMS[key as keyof SafetyCheck]}
-                  {REQUIRED_ITEMS.includes(key as keyof SafetyCheck) && (
-                    <Text style={styles.required}> *</Text>
+          {Object.entries(SAFETY_ITEMS).map(([key, label]) => {
+            if (key === 'tripSitterInfo') return null;
+            const isRequired = REQUIRED_ITEMS.includes(key as keyof SafetyCheck);
+            return (
+              <Pressable
+                key={key}
+                style={styles.checkboxContainer}
+                onPress={() => toggleCheck(key as keyof SafetyCheck)}
+              >
+                <View style={[styles.checkbox, safetyCheck[key as keyof SafetyCheck] && styles.checkboxChecked]}>
+                  {safetyCheck[key as keyof SafetyCheck] && (
+                    <MaterialIcons name="check" size={20} color="#fff" />
                   )}
+                </View>
+                <Text style={styles.checkboxLabel}>
+                  {label}
+                  {isRequired && <Text style={styles.required}> *</Text>}
                 </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+              </Pressable>
+            );
+          })}
         </View>
 
         {/* Trip Sitter Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trip Sitter</Text>
-          {isEditingSitter ? (
-            <View style={styles.sitterForm}>
-              <TextInput
-                style={styles.input}
-                placeholder="Name"
-                value={sitterForm.name}
-                onChangeText={(text) => setSitterForm(prev => ({ ...prev, name: text }))}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Phone Number"
-                value={sitterForm.phoneNumber}
-                onChangeText={(text) => setSitterForm(prev => ({ ...prev, phoneNumber: text }))}
-                keyboardType="phone-pad"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Relationship (e.g., Friend, Partner)"
-                value={sitterForm.relationship}
-                onChangeText={(text) => setSitterForm(prev => ({ ...prev, relationship: text }))}
-              />
-              <View style={styles.sitterFormButtons}>
-                <Pressable
-                  style={[styles.sitterFormButton, styles.cancelButton]}
-                  onPress={() => {
-                    if (tripState.tripSitter) {
-                      setIsEditingSitter(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.sitterFormButton,
-                    styles.saveButton,
-                    (!sitterForm.name || !sitterForm.phoneNumber || !sitterForm.relationship) && styles.disabledButton
-                  ]}
-                  onPress={handleSitterSave}
-                  disabled={!sitterForm.name || !sitterForm.phoneNumber || !sitterForm.relationship}
-                >
-                  <Text style={styles.saveButtonText}>Save</Text>
-                </Pressable>
+        {safetyCheck.tripSitter && (
+          <View style={styles.sitterSection}>
+            <Text style={styles.sectionTitle}>Trip Sitter</Text>
+            
+            {/* Select from saved sitters */}
+            {tripSitters.length > 0 && (
+              <View style={styles.savedSitters}>
+                <Text style={styles.sectionSubtitle}>Select a saved trip sitter:</Text>
+                {tripSitters.map(sitter => (
+                  <Pressable
+                    key={sitter.id}
+                    style={[
+                      styles.sitterCard,
+                      selectedSitterId === sitter.id && styles.selectedSitterCard
+                    ]}
+                    onPress={() => setSelectedSitterId(sitter.id)}
+                  >
+                    <Text style={styles.sitterName}>{sitter.name}</Text>
+                    <Text style={styles.sitterDetails}>{sitter.phone}</Text>
+                    <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
+                  </Pressable>
+                ))}
               </View>
-            </View>
-          ) : tripState.tripSitter ? (
-            <View style={styles.sitterCard}>
-              <View style={styles.sitterInfo}>
-                <Text style={styles.sitterName}>{tripState.tripSitter.name}</Text>
-                <Text style={styles.sitterDetail}>{tripState.tripSitter.relationship}</Text>
-                <Text style={styles.sitterDetail}>{tripState.tripSitter.phoneNumber}</Text>
-              </View>
-              <View style={styles.sitterActions}>
-                <TouchableOpacity
-                  style={styles.sitterActionButton}
-                  onPress={handleSitterEdit}
-                >
-                  <MaterialIcons name="edit" size={20} color="#0967D2" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.sitterActionButton}
-                  onPress={handleSitterRemove}
-                >
-                  <MaterialIcons name="delete" size={20} color="#DC2626" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
+            )}
+
+            {/* Add new sitter */}
+            <Pressable
               style={styles.addSitterButton}
-              onPress={() => setIsEditingSitter(true)}
+              onPress={() => setShowSitterForm(!showSitterForm)}
             >
-              <MaterialIcons name="person-add" size={20} color="#0967D2" />
-              <Text style={styles.addSitterText}>Add Trip Sitter</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+              <Text style={styles.addSitterText}>
+                {showSitterForm ? 'Cancel' : 'Add New Trip Sitter'}
+              </Text>
+            </Pressable>
+
+            {showSitterForm && (
+              <View style={styles.sitterForm}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Name"
+                  value={newSitter.name}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone Number"
+                  value={newSitter.phone}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
+                  keyboardType="phone-pad"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Relationship"
+                  value={newSitter.relationship}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
+                />
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Continue Button */}
         <Pressable
           style={[
             styles.continueButton,
-            !allRequiredChecked && styles.disabledButton
+            !REQUIRED_ITEMS.every(item => safetyCheck[item]) && styles.disabledButton
           ]}
           onPress={handleContinue}
-          disabled={!allRequiredChecked}
+          disabled={!REQUIRED_ITEMS.every(item => safetyCheck[item])}
         >
           <Text style={styles.continueButtonText}>
             Continue to Intentions
@@ -227,12 +188,16 @@ export default function SafetyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
   },
   content: {
     padding: 16,
-  },
-  header: {
-    marginBottom: 24,
   },
   title: {
     fontSize: 24,
@@ -242,19 +207,23 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
-  },
-  checklist: {
     marginBottom: 24,
   },
-  checklistItem: {
+  checklist: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E4E7EB',
+    marginBottom: 16,
   },
   checkbox: {
     width: 24,
@@ -266,83 +235,83 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkedBox: {
+  checkboxChecked: {
     backgroundColor: '#0967D2',
-    borderColor: '#0967D2',
   },
-  checklistContent: {
+  checkboxLabel: {
+    fontSize: 16,
     flex: 1,
   },
-  checklistText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
   required: {
-    color: '#E12D39',
+    color: 'red',
   },
-  section: {
+  sitterSection: {
     backgroundColor: 'white',
     borderRadius: 8,
     padding: 16,
     marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginBottom: 16,
   },
-  sitterForm: {
-    gap: 12,
-  },
-  input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  sitterFormButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  sitterFormButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#e1e1e1',
-  },
-  saveButton: {
-    backgroundColor: '#0967D2',
-  },
-  cancelButtonText: {
+  sectionSubtitle: {
+    fontSize: 14,
     color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+    marginBottom: 12,
   },
-  saveButtonText: {
-    color: '#fff',
+  savedSitters: {
+    marginBottom: 16,
+  },
+  sitterCard: {
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  selectedSitterCard: {
+    borderWidth: 2,
+    borderColor: '#0967D2',
+  },
+  sitterName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  sitterDetails: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
   },
   addSitterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#0967D2',
+    padding: 12,
+    backgroundColor: '#F8F9FA',
     borderRadius: 8,
-    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
   },
   addSitterText: {
     color: '#0967D2',
     fontSize: 16,
-    fontWeight: '600',
+  },
+  sitterForm: {
+    backgroundColor: '#F8F9FA',
+    padding: 16,
+    borderRadius: 8,
+  },
+  input: {
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E4E7EB',
   },
   continueButton: {
     backgroundColor: '#0967D2',
@@ -356,38 +325,6 @@ const styles = StyleSheet.create({
   continueButtonText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  sitterCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  sitterInfo: {
-    flex: 1,
-  },
-  sitterName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  sitterDetail: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 2,
-  },
-  sitterActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  sitterActionButton: {
-    padding: 8,
+    fontWeight: 'bold',
   },
 }); 

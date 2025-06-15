@@ -7,6 +7,7 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { FirebaseProvider } from '../contexts/FirebaseContext';
 import { ThemeProvider as CustomThemeProvider } from '../contexts/ThemeContext';
 import { TripProvider, useTrip } from '../contexts/TripContext';
+import { TripSitterProvider } from '../contexts/TripSitterContext';
 
 function AppContent() {
   const colorScheme = useColorScheme();
@@ -53,7 +54,9 @@ export default function RootLayout() {
       <AuthProvider>
         <CustomThemeProvider>
           <TripProvider>
-            <AppContent />
+            <TripSitterProvider>
+              <AppContent />
+            </TripSitterProvider>
           </TripProvider>
         </CustomThemeProvider>
       </AuthProvider>

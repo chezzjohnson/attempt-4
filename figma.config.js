@@ -2,7 +2,7 @@ module.exports = {
   // Figma API configuration
   figma: {
     fileKey: process.env.FIGMA_FILE_KEY,
-    accessToken: process.env.FIGMA_ACCESS_TOKEN,
+  accessToken: process.env.FIGMA_ACCESS_TOKEN,
   },
   
   // Design tokens configuration
@@ -30,7 +30,7 @@ module.exports = {
       props: {
         variant: ['primary', 'secondary', 'tertiary'],
         size: ['small', 'medium', 'large'],
-      },
+    },
     },
     Card: {
       figmaComponent: 'Card',
