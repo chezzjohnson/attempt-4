@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTrip } from '../../contexts/TripContext';
 
 interface Intention {
@@ -11,26 +11,65 @@ interface Intention {
   description: string;
 }
 
+const MAX_INTENTION_LENGTH = 100;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_INTENTIONS = 5;
+
 export default function IntentionsScreen() {
   const router = useRouter();
   const { tripState, updateIntentions } = useTrip();
   const [newIntention, setNewIntention] = useState('');
-  const [newEmoji, setNewEmoji] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [errors, setErrors] = useState<{
+    intention?: string;
+    description?: string;
+  }>({});
+
+  const validateIntention = (text: string): boolean => {
+    if (!text.trim()) return false;
+    if (text.length > MAX_INTENTION_LENGTH) return false;
+    return true;
+  };
+
+  const validateDescription = (text: string): boolean => {
+    if (text.length > MAX_DESCRIPTION_LENGTH) return false;
+    return true;
+  };
 
   const handleAddIntention = () => {
-    if (newIntention.trim() && newEmoji.trim()) {
-      const intention: Intention = {
-        id: Date.now().toString(),
-        text: newIntention.trim(),
-        emoji: newEmoji.trim(),
-        description: newDescription.trim(),
-      };
-      updateIntentions([...tripState.intentions, intention]);
-      setNewIntention('');
-      setNewEmoji('');
-      setNewDescription('');
+    const newErrors = {
+      intention: !validateIntention(newIntention) 
+        ? `Intention must be between 1 and ${MAX_INTENTION_LENGTH} characters` 
+        : undefined,
+      description: !validateDescription(newDescription)
+        ? `Description must be less than ${MAX_DESCRIPTION_LENGTH} characters`
+        : undefined,
+    };
+
+    setErrors(newErrors);
+
+    if (Object.values(newErrors).some(error => error)) {
+      return;
     }
+
+    if (tripState.intentions.length >= MAX_INTENTIONS) {
+      Alert.alert(
+        "Maximum Intentions Reached",
+        `You can add up to ${MAX_INTENTIONS} intentions for your trip.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    const intention: Intention = {
+      id: Date.now().toString(),
+      text: newIntention.trim(),
+      description: newDescription.trim(),
+    };
+    updateIntentions([...tripState.intentions, intention]);
+    setNewIntention('');
+    setNewDescription('');
+    setErrors({});
   };
 
   const handleRemoveIntention = (id: string) => {
@@ -38,6 +77,23 @@ export default function IntentionsScreen() {
   };
 
   const handleContinue = () => {
+    if (tripState.intentions.length === 0) {
+      Alert.alert(
+        "No Intentions Added",
+        "Would you like to continue without adding any intentions?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel"
+          },
+          {
+            text: "Continue",
+            onPress: () => router.push('/new-trip/review')
+          }
+        ]
+      );
+      return;
+    }
     router.push('/new-trip/review');
   };
 
@@ -57,7 +113,6 @@ export default function IntentionsScreen() {
           {tripState.intentions.map((intention) => (
             <View key={intention.id} style={styles.intentionItem}>
               <View style={styles.intentionContent}>
-                <Text style={styles.intentionEmoji}>{intention.emoji}</Text>
                 <View style={styles.intentionTextContainer}>
                   <Text style={styles.intentionText}>{intention.text}</Text>
                   {intention.description && (
@@ -79,20 +134,12 @@ export default function IntentionsScreen() {
 
         {/* Add New Intention */}
         <View style={styles.addIntention}>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={[styles.input, styles.emojiInput]}
-              placeholder="Emoji"
-              value={newEmoji}
-              onChangeText={setNewEmoji}
-            />
-            <TextInput
-              style={[styles.input, styles.textInput]}
-              placeholder="Add an intention"
-              value={newIntention}
-              onChangeText={setNewIntention}
-            />
-          </View>
+          <TextInput
+            style={[styles.input, styles.textInput]}
+            placeholder="Add an intention"
+            value={newIntention}
+            onChangeText={setNewIntention}
+          />
           <TextInput
             style={[styles.input, styles.descriptionInput]}
             placeholder="Description (optional)"
@@ -103,10 +150,10 @@ export default function IntentionsScreen() {
           <TouchableOpacity
             style={[
               styles.addButton,
-              (!newIntention.trim() || !newEmoji.trim()) && styles.disabledButton
+              !newIntention.trim() && styles.disabledButton
             ]}
             onPress={handleAddIntention}
-            disabled={!newIntention.trim() || !newEmoji.trim()}
+            disabled={!newIntention.trim()}
           >
             <Text style={styles.addButtonText}>Add Intention</Text>
           </TouchableOpacity>
@@ -168,10 +215,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  intentionEmoji: {
-    fontSize: 24,
-    marginRight: 12,
-  },
   intentionTextContainer: {
     flexDirection: 'column',
   },
@@ -199,11 +242,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
   input: {
     flex: 1,
     fontSize: 16,
@@ -211,15 +249,12 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
-  },
-  emojiInput: {
-    marginRight: 12,
+    marginBottom: 12,
   },
   textInput: {
-    marginRight: 12,
+    marginBottom: 12,
   },
   descriptionInput: {
-    marginBottom: 16,
     minHeight: 80,
     textAlignVertical: 'top',
   },

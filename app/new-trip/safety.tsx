@@ -1,7 +1,8 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTrip } from '../../contexts/TripContext';
 import { TripSitter, useTripSitter } from '../../contexts/TripSitterContext';
 
@@ -31,6 +32,20 @@ const SAFETY_ITEMS: Record<keyof SafetyCheck, string> = {
   tripSitterInfo: 'Trip sitter info'
 };
 
+const validatePhoneNumber = (phone: string): boolean => {
+  // Remove any non-digit characters
+  const digitsOnly = phone.replace(/\D/g, '');
+  // Check if it's a valid length (7-15 digits)
+  return digitsOnly.length >= 7 && digitsOnly.length <= 15;
+};
+
+const validateSitterInfo = (sitter: typeof newSitter): boolean => {
+  if (!sitter.name.trim()) return false;
+  if (!validatePhoneNumber(sitter.phone)) return false;
+  if (!sitter.relationship.trim()) return false;
+  return true;
+};
+
 export default function SafetyScreen() {
   const router = useRouter();
   const { updateSafety } = useTrip();
@@ -43,6 +58,11 @@ export default function SafetyScreen() {
     phone: '',
     relationship: '',
   });
+  const [errors, setErrors] = useState<{
+    sitterName?: string;
+    sitterPhone?: string;
+    sitterRelationship?: string;
+  }>({});
 
   const toggleCheck = (item: keyof SafetyCheck) => {
     setSafetyCheck(prev => ({
@@ -51,17 +71,50 @@ export default function SafetyScreen() {
     }));
   };
 
+  const handleAddSitter = () => {
+    const newErrors = {
+      sitterName: !newSitter.name.trim() ? 'Name is required' : undefined,
+      sitterPhone: !validatePhoneNumber(newSitter.phone) ? 'Invalid phone number' : undefined,
+      sitterRelationship: !newSitter.relationship.trim() ? 'Relationship is required' : undefined,
+    };
+
+    setErrors(newErrors);
+
+    if (Object.values(newErrors).some(error => error)) {
+      return;
+    }
+
+    // ... rest of add sitter logic ...
+  };
+
   const handleContinue = () => {
     const allRequiredChecked = REQUIRED_ITEMS.every(item => safetyCheck[item]);
-    if (allRequiredChecked) {
-      updateSafety({
-        ...safetyCheck,
-        tripSitterInfo: selectedSitterId 
-          ? tripSitters.find(s => s.id === selectedSitterId)
-          : newSitter.name ? newSitter : null,
-      });
-      router.push('/new-trip/intentions');
+    
+    if (!allRequiredChecked) {
+      Alert.alert(
+        "Safety Check Required",
+        "Please complete all required safety checks before continuing.",
+        [{ text: "OK" }]
+      );
+      return;
     }
+
+    if (safetyCheck.tripSitter && !selectedSitterId && !validateSitterInfo(newSitter)) {
+      Alert.alert(
+        "Trip Sitter Information Required",
+        "Please provide valid trip sitter information or select an existing trip sitter.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    updateSafety({
+      ...safetyCheck,
+      tripSitterInfo: selectedSitterId 
+        ? tripSitters.find(s => s.id === selectedSitterId)
+        : newSitter.name ? newSitter : null,
+    });
+    router.push('/new-trip/intentions');
   };
 
   if (isLoading) {
@@ -73,136 +126,147 @@ export default function SafetyScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
+      <View style={styles.header}>
         <Text style={styles.title}>Safety Checklist</Text>
-        <Text style={styles.subtitle}>
-          Please confirm these safety measures before proceeding
-        </Text>
+      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <Text style={styles.subtitle}>
+            Please confirm these safety measures before proceeding
+          </Text>
 
-        {/* Safety Checklist */}
-        <View style={styles.checklist}>
-          {Object.entries(SAFETY_ITEMS).map(([key, label]) => {
-            if (key === 'tripSitterInfo') return null;
-            const isRequired = REQUIRED_ITEMS.includes(key as keyof SafetyCheck);
-            return (
-              <Pressable
-                key={key}
-                style={styles.checkboxContainer}
-                onPress={() => toggleCheck(key as keyof SafetyCheck)}
-              >
-                <View style={[styles.checkbox, safetyCheck[key as keyof SafetyCheck] && styles.checkboxChecked]}>
-                  {safetyCheck[key as keyof SafetyCheck] && (
-                    <MaterialIcons name="check" size={20} color="#fff" />
-                  )}
+          {/* Safety Checklist */}
+          <View style={styles.checklist}>
+            {Object.entries(SAFETY_ITEMS).map(([key, label]) => {
+              if (key === 'tripSitterInfo') return null;
+              const isRequired = REQUIRED_ITEMS.includes(key as keyof SafetyCheck);
+              return (
+                <Pressable
+                  key={key}
+                  style={styles.checkboxContainer}
+                  onPress={() => toggleCheck(key as keyof SafetyCheck)}
+                >
+                  <View style={[styles.checkbox, safetyCheck[key as keyof SafetyCheck] && styles.checkboxChecked]}>
+                    {safetyCheck[key as keyof SafetyCheck] && (
+                      <MaterialIcons name="check" size={20} color="#fff" />
+                    )}
+                  </View>
+                  <Text style={styles.checkboxLabel}>
+                    {label}
+                    {isRequired && <Text style={styles.required}> *</Text>}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Trip Sitter Section */}
+          {safetyCheck.tripSitter && (
+            <View style={styles.sitterSection}>
+              <Text style={styles.sectionTitle}>Trip Sitter</Text>
+              
+              {/* Select from saved sitters */}
+              {tripSitters.length > 0 && (
+                <View style={styles.savedSitters}>
+                  <Text style={styles.sectionSubtitle}>Select a saved trip sitter:</Text>
+                  {tripSitters.map(sitter => (
+                    <Pressable
+                      key={sitter.id}
+                      style={[
+                        styles.sitterCard,
+                        selectedSitterId === sitter.id && styles.selectedSitterCard
+                      ]}
+                      onPress={() => setSelectedSitterId(sitter.id)}
+                    >
+                      <Text style={styles.sitterName}>{sitter.name}</Text>
+                      <Text style={styles.sitterDetails}>{sitter.phone}</Text>
+                      <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-                <Text style={styles.checkboxLabel}>
-                  {label}
-                  {isRequired && <Text style={styles.required}> *</Text>}
+              )}
+
+              {/* Add new sitter */}
+              <Pressable
+                style={styles.addSitterButton}
+                onPress={() => setShowSitterForm(!showSitterForm)}
+              >
+                <Text style={styles.addSitterText}>
+                  {showSitterForm ? 'Cancel' : 'Add New Trip Sitter'}
                 </Text>
               </Pressable>
-            );
-          })}
+
+              {showSitterForm && (
+                <View style={styles.sitterForm}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Name"
+                    value={newSitter.name}
+                    onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Phone Number"
+                    value={newSitter.phone}
+                    onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
+                    keyboardType="phone-pad"
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Relationship"
+                    value={newSitter.relationship}
+                    onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
+                  />
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Continue Button */}
+          <Pressable
+            style={[
+              styles.continueButton,
+              !REQUIRED_ITEMS.every(item => safetyCheck[item]) && styles.disabledButton
+            ]}
+            onPress={handleContinue}
+            disabled={!REQUIRED_ITEMS.every(item => safetyCheck[item])}
+          >
+            <Text style={styles.continueButtonText}>
+              Continue to Intentions
+            </Text>
+          </Pressable>
         </View>
-
-        {/* Trip Sitter Section */}
-        {safetyCheck.tripSitter && (
-          <View style={styles.sitterSection}>
-            <Text style={styles.sectionTitle}>Trip Sitter</Text>
-            
-            {/* Select from saved sitters */}
-            {tripSitters.length > 0 && (
-              <View style={styles.savedSitters}>
-                <Text style={styles.sectionSubtitle}>Select a saved trip sitter:</Text>
-                {tripSitters.map(sitter => (
-                  <Pressable
-                    key={sitter.id}
-                    style={[
-                      styles.sitterCard,
-                      selectedSitterId === sitter.id && styles.selectedSitterCard
-                    ]}
-                    onPress={() => setSelectedSitterId(sitter.id)}
-                  >
-                    <Text style={styles.sitterName}>{sitter.name}</Text>
-                    <Text style={styles.sitterDetails}>{sitter.phone}</Text>
-                    <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
-            {/* Add new sitter */}
-            <Pressable
-              style={styles.addSitterButton}
-              onPress={() => setShowSitterForm(!showSitterForm)}
-            >
-              <Text style={styles.addSitterText}>
-                {showSitterForm ? 'Cancel' : 'Add New Trip Sitter'}
-              </Text>
-            </Pressable>
-
-            {showSitterForm && (
-              <View style={styles.sitterForm}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Name"
-                  value={newSitter.name}
-                  onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone Number"
-                  value={newSitter.phone}
-                  onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
-                  keyboardType="phone-pad"
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Relationship"
-                  value={newSitter.relationship}
-                  onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
-                />
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Continue Button */}
-        <Pressable
-          style={[
-            styles.continueButton,
-            !REQUIRED_ITEMS.every(item => safetyCheck[item]) && styles.disabledButton
-          ]}
-          onPress={handleContinue}
-          disabled={!REQUIRED_ITEMS.every(item => safetyCheck[item])}
-        >
-          <Text style={styles.continueButtonText}>
-            Continue to Intentions
-          </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  header: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  content: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
-  },
-  content: {
-    padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,

@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTrip } from '../../contexts/TripContext';
 
 const PHASE_COLORS = {
@@ -21,17 +21,39 @@ const PHASE_DURATIONS: Record<Phase, number> = {
 
 export default function ActiveTripScreen() {
   const router = useRouter();
-  const { tripState, updatePhase, endTrip } = useTrip();
+  const { tripState, updatePhase, endTrip, updateTrip } = useTrip();
   const [expandedIntention, setExpandedIntention] = useState<string | null>(null);
   const [showTripSitter, setShowTripSitter] = useState(false);
-
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [timeToNextPhase, setTimeToNextPhase] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(true);
+  const [newNote, setNewNote] = useState('');
+  const [intentionNotes, setIntentionNotes] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const backHandlerRef = useRef<{ remove: () => void } | undefined>(undefined);
+
+  // Lock the screen and prevent back navigation
+  useEffect(() => {
+    backHandlerRef.current = BackHandler.addEventListener('hardwareBackPress', () => {
+      return true; // Prevent back navigation
+    });
+
+    return () => {
+      if (backHandlerRef.current) {
+        backHandlerRef.current.remove();
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    if (!tripState.startTime) return;
+    if (!tripState.startTime) {
+      setIsLoading(false);
+      return;
+    }
 
-    const interval = setInterval(() => {
+    const updateTimer = () => {
       const now = new Date();
       const elapsed = Math.floor((now.getTime() - tripState.startTime!.getTime()) / 1000 / 60);
       setTimeElapsed(elapsed);
@@ -46,9 +68,20 @@ export default function ActiveTripScreen() {
         const timeToNext = PHASE_DURATIONS[tripState.currentPhase as Phase] - timeInCurrentPhase;
         setTimeToNextPhase(timeToNext);
       }
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
+    // Initial update
+    updateTimer();
+    setIsLoading(false);
+
+    // Set up interval
+    timerRef.current = setInterval(updateTimer, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
   }, [tripState.startTime, tripState.currentPhase]);
 
   const getPhaseStartTime = (phaseIndex: number) => {
@@ -110,90 +143,137 @@ export default function ActiveTripScreen() {
     }
   };
 
-  const handleEndTrip = () => {
-    const totalDuration = getTotalDuration();
-    const timeDifference = totalDuration - timeElapsed;
+  const handleEndTrip = async () => {
+    try {
+      setIsSaving(true);
+      const totalDuration = getTotalDuration();
+      const timeDifference = totalDuration - timeElapsed;
 
-    if (timeDifference > 60) {
-      // Trip ended more than an hour early
-      Alert.alert(
-        "End Trip Early?",
-        `Based on the expected trip duration of ${formatTimeRemaining(totalDuration)}, you're ending more than an hour early. Would you like to save this trip?`,
-        [
-          {
-            text: "Discard Trip",
-            style: "destructive",
-            onPress: () => {
-              Alert.alert(
-                "Confirm Discard",
-                "Are you sure you want to discard this trip? This action cannot be undone.",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel"
-                  },
-                  {
-                    text: "Discard",
-                    style: "destructive",
-                    onPress: () => {
-                      endTrip();
-                      router.push('/(tabs)');
+      if (timeDifference > 60) {
+        // Trip ended more than an hour early
+        Alert.alert(
+          "End Trip Early?",
+          `Based on the expected trip duration of ${formatTimeRemaining(totalDuration)}, you're ending more than an hour early. Would you like to save this trip?`,
+          [
+            {
+              text: "Discard Trip",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await endTrip(false);
+                  router.replace('/(tabs)');
+                } catch (error) {
+                  console.error('Error discarding trip:', error);
+                  Alert.alert(
+                    "Error",
+                    "Failed to discard trip. Please try again.",
+                    [{ text: "OK" }]
+                  );
+                } finally {
+                  setIsSaving(false);
+                }
+              }
+            },
+            {
+              text: "Save Trip",
+              onPress: async () => {
+                try {
+                  const currentTripState = {
+                    ...tripState,
+                    endTime: new Date()
+                  };
+                  await updateTrip(currentTripState);
+                  await endTrip(true);
+                  router.replace('/trip/post-trip');
+                } catch (error) {
+                  console.error('Error saving trip:', error);
+                  Alert.alert(
+                    "Error",
+                    "Failed to save trip. Please try again.",
+                    [{ text: "OK" }]
+                  );
+                } finally {
+                  setIsSaving(false);
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        // Normal trip end
+        Alert.alert(
+          "End Trip",
+          "Would you like to save this trip?",
+          [
+            {
+              text: "Discard Trip",
+              style: "destructive",
+              onPress: () => {
+                Alert.alert(
+                  "Confirm Discard",
+                  "Are you sure you want to discard this trip? This action cannot be undone.",
+                  [
+                    {
+                      text: "Cancel",
+                      style: "cancel"
+                    },
+                    {
+                      text: "Discard",
+                      style: "destructive",
+                      onPress: async () => {
+                        try {
+                          await endTrip(false);
+                          router.replace('/(tabs)');
+                        } catch (error) {
+                          console.error('Error discarding trip:', error);
+                          Alert.alert(
+                            "Error",
+                            "Failed to discard trip. Please try again.",
+                            [{ text: "OK" }]
+                          );
+                        } finally {
+                          setIsSaving(false);
+                        }
+                      }
                     }
-                  }
-                ]
-              );
+                  ]
+                );
+              }
+            },
+            {
+              text: "Save Trip",
+              onPress: async () => {
+                try {
+                  const currentTripState = {
+                    ...tripState,
+                    endTime: new Date()
+                  };
+                  await updateTrip(currentTripState);
+                  await endTrip(true);
+                  router.replace('/trip/post-trip');
+                } catch (error) {
+                  console.error('Error saving trip:', error);
+                  Alert.alert(
+                    "Error",
+                    "Failed to save trip. Please try again.",
+                    [{ text: "OK" }]
+                  );
+                } finally {
+                  setIsSaving(false);
+                }
+              }
             }
-          },
-          {
-            text: "Save Trip",
-            onPress: () => {
-              // TODO: Implement save trip functionality
-              endTrip();
-              router.push('/(tabs)');
-            }
-          }
-        ]
-      );
-    } else {
-      // Normal trip end
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error in handleEndTrip:', error);
       Alert.alert(
-        "End Trip",
-        "Would you like to save this trip?",
-        [
-          {
-            text: "Discard Trip",
-            style: "destructive",
-            onPress: () => {
-              Alert.alert(
-                "Confirm Discard",
-                "Are you sure you want to discard this trip? This action cannot be undone.",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel"
-                  },
-                  {
-                    text: "Discard",
-                    style: "destructive",
-                    onPress: () => {
-                      endTrip();
-                      router.push('/(tabs)');
-                    }
-                  }
-                ]
-              );
-            }
-          },
-          {
-            text: "Save Trip",
-            onPress: () => {
-              // TODO: Implement save trip functionality
-              endTrip();
-              router.push('/(tabs)');
-            }
-          }
-        ]
+        "Error",
+        "An unexpected error occurred. Please try again.",
+        [{ text: "OK" }]
       );
+      setIsSaving(false);
     }
   };
 
@@ -204,6 +284,63 @@ export default function ActiveTripScreen() {
       hour12: true 
     });
   };
+
+  const handleAddNote = () => {
+    if (newNote.trim()) {
+      const note = {
+        id: Date.now().toString(),
+        content: newNote.trim(),
+        timestamp: new Date(),
+        type: 'during' as const
+      };
+      
+      updateTrip({
+        ...tripState,
+        generalNotes: [...(tripState.generalNotes || []), note]
+      });
+      
+      setNewNote('');
+    }
+  };
+
+  const handleAddIntentionNote = (intentionId: string) => {
+    if (intentionNotes[intentionId]?.trim()) {
+      const note = {
+        id: Date.now().toString(),
+        content: intentionNotes[intentionId].trim(),
+        timestamp: new Date(),
+        type: 'during' as const
+      };
+
+      const updatedIntentions = tripState.intentions.map(intention => {
+        if (intention.id === intentionId) {
+          return {
+            ...intention,
+            notes: [...(intention.notes || []), note]
+          };
+        }
+        return intention;
+      });
+
+      updateTrip({
+        ...tripState,
+        intentions: updatedIntentions
+      });
+
+      setIntentionNotes(prev => ({
+        ...prev,
+        [intentionId]: ''
+      }));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#0967D2" />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -297,7 +434,9 @@ export default function ActiveTripScreen() {
 
         {/* Intentions Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Intentions</Text>
+          <Text style={styles.sectionTitle}>
+            {tripState.intentions.length === 1 ? 'Intention' : 'Intentions'}
+          </Text>
           {tripState.intentions.map((intention) => (
             <View key={intention.id} style={styles.intentionCard}>
               <TouchableOpacity
@@ -306,7 +445,6 @@ export default function ActiveTripScreen() {
                   expandedIntention === intention.id ? null : intention.id
                 )}
               >
-                <Text style={styles.intentionEmoji}>{intention.emoji}</Text>
                 <Text style={styles.intentionText}>{intention.text}</Text>
                 <MaterialIcons
                   name={expandedIntention === intention.id ? "expand-less" : "expand-more"}
@@ -320,15 +458,81 @@ export default function ActiveTripScreen() {
                   <Text style={styles.intentionDescription}>
                     {intention.description}
                   </Text>
-                  <TextInput
-                    style={styles.notesInput}
-                    placeholder="Add notes about this intention..."
-                    multiline
-                  />
+                  <View style={styles.notesContainer}>
+                    {intention.notes?.map(note => (
+                      <View key={note.id} style={styles.noteCard}>
+                        <Text style={styles.noteContent}>{note.content}</Text>
+                        <Text style={styles.noteTimestamp}>
+                          {new Date(note.timestamp).toLocaleTimeString([], { 
+                            hour: 'numeric', 
+                            minute: '2-digit',
+                            hour12: true 
+                          })}
+                        </Text>
+                      </View>
+                    ))}
+                    <View style={styles.noteInputContainer}>
+                      <TextInput
+                        style={styles.noteInput}
+                        placeholder="Add a note for this intention..."
+                        value={intentionNotes[intention.id] || ''}
+                        onChangeText={(text) => setIntentionNotes(prev => ({
+                          ...prev,
+                          [intention.id]: text
+                        }))}
+                        multiline
+                      />
+                      <TouchableOpacity 
+                        style={[
+                          styles.addNoteButton,
+                          !intentionNotes[intention.id]?.trim() && styles.addNoteButtonDisabled
+                        ]}
+                        onPress={() => handleAddIntentionNote(intention.id)}
+                        disabled={!intentionNotes[intention.id]?.trim()}
+                      >
+                        <MaterialIcons name="add" size={24} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 </View>
               )}
             </View>
           ))}
+        </View>
+
+        {/* General Notes Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notes</Text>
+          <View style={styles.notesContainer}>
+            {tripState.generalNotes?.map(note => (
+              <View key={note.id} style={styles.noteCard}>
+                <Text style={styles.noteContent}>{note.content}</Text>
+                <Text style={styles.noteTimestamp}>
+                  {new Date(note.timestamp).toLocaleTimeString([], { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                  })}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.noteInputContainer}>
+            <TextInput
+              style={styles.noteInput}
+              placeholder="Add a note..."
+              value={newNote}
+              onChangeText={setNewNote}
+              multiline
+            />
+            <TouchableOpacity 
+              style={[styles.addNoteButton, !newNote.trim() && styles.addNoteButtonDisabled]}
+              onPress={handleAddNote}
+              disabled={!newNote.trim()}
+            >
+              <MaterialIcons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* End Trip Button */}
@@ -472,10 +676,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
   },
-  intentionEmoji: {
-    fontSize: 24,
-    marginRight: 12,
-  },
   intentionText: {
     flex: 1,
     fontSize: 16,
@@ -491,13 +691,53 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 12,
   },
-  notesInput: {
+  notesContainer: {
+    marginBottom: 16,
+  },
+  noteCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  noteContent: {
+    fontSize: 14,
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  noteTimestamp: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  noteInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 16,
+  },
+  noteInput: {
+    flex: 1,
     backgroundColor: '#fff',
     borderRadius: 8,
     padding: 12,
-    fontSize: 14,
-    color: '#1a1a1a',
-    minHeight: 80,
+    marginRight: 8,
+    minHeight: 40,
+    maxHeight: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  addNoteButton: {
+    backgroundColor: '#0967D2',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addNoteButtonDisabled: {
+    backgroundColor: '#9CA3AF',
   },
   endButton: {
     backgroundColor: '#F44336',

@@ -1,20 +1,24 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTrip } from '../../contexts/TripContext';
 
 const DOSE_LEVELS = [
   {
     name: 'Mini',
     range: '0.25 - 0.75g',
+    min: 0.25,
+    max: 0.75,
     description: 'Subtle effects, good for beginners',
     intensity: 1,
     requiresWarning: false,
   },
   {
     name: 'Museum',
-    range: '0.5 - 1.5g',
+    range: '0.75 - 2g',
+    min: 0.75,
+    max: 2,
     description: 'Mild effects, increased awareness',
     intensity: 2,
     requiresWarning: false,
@@ -22,6 +26,8 @@ const DOSE_LEVELS = [
   {
     name: 'Moderate',
     range: '2 - 3.5g',
+    min: 2,
+    max: 3.5,
     description: 'Strong effects, good for experienced users',
     intensity: 3,
     requiresWarning: false,
@@ -29,6 +35,8 @@ const DOSE_LEVELS = [
   {
     name: 'Mega',
     range: '3.5 - 5g',
+    min: 3.5,
+    max: 5,
     description: 'Intense effects, for experienced users only',
     intensity: 4,
     requiresWarning: true,
@@ -36,6 +44,8 @@ const DOSE_LEVELS = [
   {
     name: 'Heroic',
     range: '5+ g',
+    min: 5,
+    max: Infinity,
     description: 'Extreme effects, only for very experienced users',
     intensity: 5,
     requiresWarning: true,
@@ -45,23 +55,78 @@ const DOSE_LEVELS = [
 export default function DoseSelectionScreen() {
   const router = useRouter();
   const [selectedDose, setSelectedDose] = useState<string | null>(null);
+  const [exactDose, setExactDose] = useState('');
+  const [showSavedMessage, setShowSavedMessage] = useState(false);
+  const [isDoseSaved, setIsDoseSaved] = useState(false);
   const { updateDose } = useTrip();
 
   const handleDoseSelect = (dose: string) => {
     setSelectedDose(dose);
+    setExactDose(''); // Clear exact dose when selecting a range
+    setIsDoseSaved(false); // Reset saved state when selecting a new dose
+  };
+
+  const handleExactDoseChange = (text: string) => {
+    // Only allow numbers and one decimal point
+    const cleanedText = text.replace(/[^0-9.]/g, '');
+    
+    // Handle decimal point logic
+    if (cleanedText.length > 0) {
+      const parts = cleanedText.split('.');
+      if (parts.length > 2) {
+        // If more than one decimal point, keep only the first one
+        setExactDose(parts[0] + '.' + parts.slice(1).join(''));
+        return;
+      }
+      
+      // Limit to 2 decimal places
+      if (parts[1] && parts[1].length > 2) {
+        setExactDose(parts[0] + '.' + parts[1].slice(0, 2));
+        return;
+      }
+    }
+    
+    setExactDose(cleanedText);
+    setIsDoseSaved(false); // Reset saved state when changing dose
+    setSelectedDose(null); // Clear selected dose when typing
+  };
+
+  const handleSaveExactDose = () => {
+    const doseNum = parseFloat(exactDose);
+    if (!isNaN(doseNum)) {
+      const matchingDose = DOSE_LEVELS.find(
+        level => doseNum >= level.min && doseNum <= level.max
+      );
+      if (matchingDose) {
+        setSelectedDose(matchingDose.name);
+        setShowSavedMessage(true);
+        setIsDoseSaved(true);
+        setTimeout(() => {
+          setShowSavedMessage(false);
+        }, 1500);
+      } else {
+        setSelectedDose(null);
+        setShowSavedMessage(true);
+        setIsDoseSaved(true);
+        setTimeout(() => {
+          setShowSavedMessage(false);
+        }, 1500);
+      }
+    }
   };
 
   const handleContinue = () => {
-    if (selectedDose) {
+    if (selectedDose || exactDose) {
       const doseData = DOSE_LEVELS.find(d => d.name === selectedDose);
       if (doseData) {
-        updateDose({
+        const doseInfo = {
           name: doseData.name,
-          range: doseData.range,
+          range: exactDose ? `${exactDose}g` : doseData.range,
           description: doseData.description,
-        });
+        };
+        updateDose(doseInfo);
+        router.push('/new-trip/setting');
       }
-      router.push('/new-trip/setting');
     }
   };
 
@@ -75,6 +140,48 @@ export default function DoseSelectionScreen() {
             Choose a dose level that matches your experience and intentions
           </Text>
         </View>
+
+        {/* Exact Dose Input */}
+        <View style={styles.exactDoseContainer}>
+          <Text style={styles.sectionTitle}>Enter Exact Dose</Text>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={exactDose}
+              onChangeText={handleExactDoseChange}
+              placeholder="Input exact dose level"
+              keyboardType="decimal-pad"
+              maxLength={5}
+            />
+            <Text style={styles.unitText}>g</Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.saveButton,
+              (!exactDose || isDoseSaved) && styles.disabledButton
+            ]}
+            onPress={handleSaveExactDose}
+            disabled={!exactDose || isDoseSaved}
+          >
+            <Text style={[
+              styles.saveButtonText,
+              isDoseSaved && styles.disabledButtonText
+            ]}>
+              {isDoseSaved ? 'Dose Saved' : 'Save Exact Dose'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Selected Dose Display */}
+        {(selectedDose || (exactDose && isDoseSaved)) && (
+          <View style={styles.selectedDoseContainer}>
+            <Text style={styles.selectedDoseText}>
+              {exactDose && isDoseSaved
+                ? `${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
+                : selectedDose}
+            </Text>
+          </View>
+        )}
 
         {/* Dose Level Cards */}
         <View style={styles.cardsContainer}>
@@ -157,14 +264,25 @@ export default function DoseSelectionScreen() {
 
         {/* Continue Button */}
         <Pressable
-          style={[styles.continueButton, !selectedDose && styles.disabledButton]}
+          style={[styles.continueButton, !selectedDose && !exactDose && styles.disabledButton]}
           onPress={handleContinue}
-          disabled={!selectedDose}
+          disabled={!selectedDose && !exactDose}
         >
           <Text style={styles.continueButtonText}>
             Continue to Set & Setting
           </Text>
         </Pressable>
+
+        {/* Saved Message */}
+        {showSavedMessage && (
+          <View style={styles.savedMessage}>
+            <Text style={styles.savedMessageText}>
+              {exactDose 
+                ? `Saved ${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
+                : `Saved ${selectedDose} dose`}
+            </Text>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -188,6 +306,34 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  exactDoseContainer: {
+    marginBottom: 24,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 12,
+  },
+  unitText: {
+    fontSize: 16,
+    color: '#666',
+    marginLeft: 4,
   },
   cardsContainer: {
     gap: 16,
@@ -302,5 +448,49 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  savedMessage: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -100 }, { translateY: -20 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  savedMessageText: {
+    color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  saveButton: {
+    backgroundColor: '#0967D2',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButtonText: {
+    color: '#9CA3AF',
+  },
+  selectedDoseContainer: {
+    backgroundColor: '#E3F2FD',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#0967D2',
+  },
+  selectedDoseText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#0967D2',
+    textAlign: 'center',
   },
 }); 

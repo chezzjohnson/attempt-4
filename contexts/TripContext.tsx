@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { TripSitter } from './TripSitterContext';
 
@@ -12,7 +13,6 @@ export interface Note {
 
 export interface Intention {
   id: string;
-  emoji: string;
   text: string;
   description?: string;
   notes?: Note[];
@@ -109,98 +109,158 @@ const initialState: TripState = {
 
 const TripContext = createContext<TripContextType | undefined>(undefined);
 
+interface PendingSync {
+  type: 'trip' | 'history';
+  data: TripState | TripHistory[];
+  timestamp: number;
+}
+
+const PENDING_SYNC_KEY = '@pending_sync';
+
 export function TripProvider({ children }: { children: React.ReactNode }) {
   const [tripState, setTripState] = useState<TripState>(initialState);
   const [tripHistory, setTripHistory] = useState<TripHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSync, setPendingSync] = useState<PendingSync[]>([]);
 
-  // Load trip data and history from storage on mount
+  // Monitor network status
   useEffect(() => {
-    loadTripData();
-    loadTripHistory();
+    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+      const wasOffline = !isOnline;
+      const isNowOnline = state.isConnected ?? false;
+      setIsOnline(isNowOnline);
+
+      // If we're coming back online, try to sync pending changes
+      if (wasOffline && isNowOnline) {
+        syncPendingChanges();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isOnline]);
+
+  // Load pending sync data on mount
+  useEffect(() => {
+    loadPendingSync();
   }, []);
 
-  const loadTripData = async () => {
+  const loadPendingSync = async () => {
     try {
-      const storedData = await AsyncStorage.getItem(STORAGE_KEY);
-      if (storedData) {
-        const parsedData = JSON.parse(storedData);
-        // Convert string dates back to Date objects
-        if (parsedData.startTime) {
-          parsedData.startTime = new Date(parsedData.startTime);
-        }
-        if (parsedData.generalNotes) {
-          parsedData.generalNotes = parsedData.generalNotes.map((note: any) => ({
-            ...note,
-            timestamp: new Date(note.timestamp)
-          }));
-        }
-        if (parsedData.intentions) {
-          parsedData.intentions = parsedData.intentions.map((intention: any) => ({
-            ...intention,
-            notes: intention.notes?.map((note: any) => ({
-              ...note,
-              timestamp: new Date(note.timestamp)
-            })),
-            ratings: intention.ratings?.map((rating: any) => ({
-              ...rating,
-              timestamp: new Date(rating.timestamp)
-            }))
-          }));
-        }
-        setTripState(parsedData);
+      const storedSync = await AsyncStorage.getItem(PENDING_SYNC_KEY);
+      if (storedSync) {
+        setPendingSync(JSON.parse(storedSync));
       }
     } catch (error) {
-      console.error('Error loading trip data:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('Error loading pending sync data:', error);
     }
   };
 
-  const loadTripHistory = async () => {
+  const savePendingSync = async (sync: PendingSync[]) => {
     try {
-      const storedHistory = await AsyncStorage.getItem(HISTORY_KEY);
-      if (storedHistory) {
-        const parsedHistory = JSON.parse(storedHistory).map((trip: any) => ({
-          ...trip,
-          startTime: new Date(trip.startTime),
-          endTime: new Date(trip.endTime),
-          generalNotes: trip.generalNotes.map((note: any) => ({
-            ...note,
-            timestamp: new Date(note.timestamp)
-          })),
-          intentions: trip.intentions.map((intention: any) => ({
-            ...intention,
-            notes: intention.notes?.map((note: any) => ({
-              ...note,
-              timestamp: new Date(note.timestamp)
-            })),
-            ratings: intention.ratings?.map((rating: any) => ({
-              ...rating,
-              timestamp: new Date(rating.timestamp)
-            }))
-          }))
-        }));
-        setTripHistory(parsedHistory);
-      }
+      await AsyncStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(sync));
+      setPendingSync(sync);
     } catch (error) {
-      console.error('Error loading trip history:', error);
+      console.error('Error saving pending sync data:', error);
     }
+  };
+
+  const syncPendingChanges = async () => {
+    if (!isOnline || pendingSync.length === 0) return;
+
+    const newPendingSync = [...pendingSync];
+    const errors: Error[] = [];
+
+    for (const sync of pendingSync) {
+      try {
+        if (sync.type === 'trip') {
+          await saveTripData(sync.data as TripState);
+        } else if (sync.type === 'history') {
+          await saveTripHistory(sync.data as TripHistory[]);
+        }
+        // Remove successful sync from pending
+        newPendingSync.shift();
+      } catch (error) {
+        errors.push(error as Error);
+      }
+    }
+
+    if (errors.length > 0) {
+      console.error('Errors during sync:', errors);
+    }
+
+    await savePendingSync(newPendingSync);
   };
 
   const saveTripData = async (data: TripState) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (error) {
-      console.error('Error saving trip data:', error);
+    if (!isOnline) {
+      // Store for later sync
+      const newPendingSync: PendingSync[] = [...pendingSync, {
+        type: 'trip',
+        data,
+        timestamp: Date.now()
+      }];
+      await savePendingSync(newPendingSync);
+      return;
+    }
+
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        return;
+      } catch (error) {
+        retryCount++;
+        if (retryCount === maxRetries) {
+          console.error('Failed to save trip data after', maxRetries, 'attempts:', error);
+          // Store for later sync
+          const newPendingSync: PendingSync[] = [...pendingSync, {
+            type: 'trip',
+            data,
+            timestamp: Date.now()
+          }];
+          await savePendingSync(newPendingSync);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
     }
   };
 
   const saveTripHistory = async (history: TripHistory[]) => {
-    try {
-      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    } catch (error) {
-      console.error('Error saving trip history:', error);
+    if (!isOnline) {
+      // Store for later sync
+      const newPendingSync: PendingSync[] = [...pendingSync, {
+        type: 'history',
+        data: history,
+        timestamp: Date.now()
+      }];
+      await savePendingSync(newPendingSync);
+      return;
+    }
+
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      try {
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        return;
+      } catch (error) {
+        retryCount++;
+        if (retryCount === maxRetries) {
+          console.error('Failed to save trip history after', maxRetries, 'attempts:', error);
+          // Store for later sync
+          const newPendingSync: PendingSync[] = [...pendingSync, {
+            type: 'history',
+            data: history,
+            timestamp: Date.now()
+          }];
+          await savePendingSync(newPendingSync);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
     }
   };
 
@@ -251,35 +311,34 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   };
 
   const endTrip = (save: boolean) => {
-    console.log('TripContext - endTrip called with save:', save);
-    console.log('TripContext - current tripState:', JSON.stringify(tripState, null, 2));
-    
     if (save && tripState.startTime) {
-      const completedTrip: TripHistory = {
-        id: tripState.startTime.toISOString(),
-        startTime: tripState.startTime,
-        endTime: new Date(),
-        dose: tripState.dose,
-        set: tripState.set,
-        setting: tripState.setting,
-        safety: tripState.safety,
-        tripSitter: tripState.tripSitter,
-        intentions: tripState.intentions,
-        generalNotes: tripState.generalNotes,
-        postTripRated: tripState.postTripRated,
-      };
-      console.log('TripContext - saving completed trip:', JSON.stringify(completedTrip, null, 2));
-      const newHistory = [...tripHistory, completedTrip];
-      setTripHistory(newHistory);
-      saveTripHistory(newHistory);
+      // Create a backup of the current state before updating
+      const backupState = { ...tripState };
       
-      // Don't reset the trip state yet - it will be reset after post-trip ratings
-      console.log('TripContext - preserving trip state for post-trip screen');
+      // Update the trip state with end time
+      const updatedTripState = {
+        ...tripState,
+        endTime: new Date(),
+      };
+      
+      // Save the updated state
+      setTripState(updatedTripState);
+      saveTripData(updatedTripState);
+      
+      // Keep the backup in memory in case we need to recover
+      setTimeout(() => {
+        if (tripState.startTime === backupState.startTime) {
+          // If the state hasn't changed, we can clear the backup
+          return;
+        }
+        // If the state has changed, we might need to recover
+        console.warn('Trip state changed unexpectedly after endTrip');
+      }, 5000);
+      
       return;
     }
     
     // Only reset if we're not saving or if there's no start time
-    console.log('TripContext - resetting tripState to initial state');
     setTripState(initialState);
     saveTripData(initialState);
   };

@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import type { Intention, Note, TripHistory } from '../../contexts/TripContext';
 import { useTrip } from '../../contexts/TripContext';
@@ -66,6 +66,7 @@ export default function HistoryScreen() {
   const router = useRouter();
   const { tripHistory, updateTrip, tripState } = useTrip();
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
+  const [expandedIntention, setExpandedIntention] = useState<string | null>(null);
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString(undefined, {
@@ -153,124 +154,172 @@ export default function HistoryScreen() {
     router.push('/trip/post-trip');
   };
 
+  const getFollowUpButton = (type: '7-day' | '14-day' | '30-day', intention: Intention, trip: TripHistory) => {
+    const hasFollowUpRating = intention.ratings?.some((rating: { type: string; value: number | null }) => 
+      rating.type === type && rating.value !== null
+    );
+
+    // Calculate days since trip
+    const tripEndTime = new Date(trip.endTime);
+    const now = new Date();
+    const daysSinceTrip = Math.floor((now.getTime() - tripEndTime.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Check if enough time has passed
+    const isAvailable = (() => {
+      switch (type) {
+        case '7-day':
+          return daysSinceTrip >= 7;
+        case '14-day':
+          return daysSinceTrip >= 14;
+        case '30-day':
+          return daysSinceTrip >= 30;
+        default:
+          return false;
+      }
+    })();
+
+    if (hasFollowUpRating) {
+      return (
+        <View style={styles.followUpButton}>
+          <MaterialIcons name="check-circle" size={20} color="#10B981" />
+          <Text style={[styles.followUpButtonText, { color: '#10B981' }]}>
+            {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Rated
+          </Text>
+        </View>
+      );
+    }
+
+    if (!isAvailable) {
+      const daysRemaining = (() => {
+        switch (type) {
+          case '7-day':
+            return 7 - daysSinceTrip;
+          case '14-day':
+            return 14 - daysSinceTrip;
+          case '30-day':
+            return 30 - daysSinceTrip;
+          default:
+            return 0;
+        }
+      })();
+
+      return (
+        <View style={[styles.followUpButton, styles.followUpButtonDisabled]}>
+          <MaterialIcons name="schedule" size={20} color="#9CA3AF" />
+          <Text style={[styles.followUpButtonText, { color: '#9CA3AF' }]}>
+            {daysRemaining}d left
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.followUpButton}
+        onPress={() => router.push({
+          pathname: '/trip/follow-up',
+          params: { tripId: trip.id, followUpType: type }
+        })}
+      >
+        <MaterialIcons name="schedule" size={20} color="#5196F4" />
+        <Text style={styles.followUpButtonText}>
+          {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Follow-up
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const getIntentionRatingData = (intention: Intention) => {
+    if (!intention.ratings?.length) return null;
+
+    const categories = [
+      { type: 'post-trip', label: 'Post' },
+      { type: '7-day', label: '7d' },
+      { type: '14-day', label: '14d' },
+      { type: '30-day', label: '30d' }
+    ];
+
+    return {
+      labels: categories.map(cat => cat.label),
+      datasets: [{
+        data: categories.map(cat => {
+          const rating = intention.ratings?.find(r => r.type === cat.type);
+          return rating?.value || 0;
+        })
+      }]
+    };
+  };
+
+  const renderRatingTimeline = (intention: Intention) => {
+    const categories = [
+      { type: 'post-trip', label: 'Post' },
+      { type: '7-day', label: '7d' },
+      { type: '14-day', label: '14d' },
+      { type: '30-day', label: '30d' }
+    ];
+
+    return (
+      <View style={styles.timelineContainer}>
+        {categories.map((cat, index) => {
+          const rating = intention.ratings?.find(r => r.type === cat.type);
+          const value = rating?.value || 0;
+          const isRated = value > 0;
+
+          return (
+            <View key={cat.type} style={styles.timelineItem}>
+              <View style={[
+                styles.timelineDot,
+                isRated ? styles.timelineDotActive : styles.timelineDotInactive
+              ]}>
+                <Text style={[
+                  styles.timelineDotText,
+                  isRated ? styles.timelineDotTextActive : styles.timelineDotTextInactive
+                ]}>
+                  {isRated ? value : '-'}
+                </Text>
+              </View>
+              {index < categories.length - 1 && (
+                <View style={[
+                  styles.timelineLine,
+                  isRated ? styles.timelineLineActive : styles.timelineLineInactive
+                ]} />
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
   const renderTripCard = (trip: TripHistory) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [expandedIntention, setExpandedIntention] = useState<string | null>(null);
-    const router = useRouter();
+    const isExpanded = expandedTrip === trip.id;
     const hasIntentions = trip.intentions && trip.intentions.length > 0;
     const hasRatings = trip.intentions.some(intention => 
       intention.ratings && intention.ratings.some(rating => rating.value !== null)
     );
-
-    const getFollowUpButton = (type: '7-day' | '14-day' | '30-day', intention: Intention) => {
-      const hasFollowUpRating = intention.ratings?.some((rating: { type: string; value: number | null }) => 
-        rating.type === type && rating.value !== null
-      );
-
-      // Calculate days since trip
-      const tripEndTime = new Date(trip.endTime);
-      const now = new Date();
-      const daysSinceTrip = Math.floor((now.getTime() - tripEndTime.getTime()) / (1000 * 60 * 60 * 24));
-
-      // Check if enough time has passed
-      const isAvailable = (() => {
-        switch (type) {
-          case '7-day':
-            return daysSinceTrip >= 7;
-          case '14-day':
-            return daysSinceTrip >= 14;
-          case '30-day':
-            return daysSinceTrip >= 30;
-          default:
-            return false;
-        }
-      })();
-
-      if (hasFollowUpRating) {
-        return (
-          <View style={styles.followUpButton}>
-            <MaterialIcons name="check-circle" size={20} color="#10B981" />
-            <Text style={[styles.followUpButtonText, { color: '#10B981' }]}>
-              {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Rated
-            </Text>
-          </View>
-        );
-      }
-
-      if (!isAvailable) {
-        const daysRemaining = (() => {
-          switch (type) {
-            case '7-day':
-              return 7 - daysSinceTrip;
-            case '14-day':
-              return 14 - daysSinceTrip;
-            case '30-day':
-              return 30 - daysSinceTrip;
-            default:
-              return 0;
-          }
-        })();
-
-        return (
-          <View style={[styles.followUpButton, styles.followUpButtonDisabled]}>
-            <MaterialIcons name="schedule" size={20} color="#9CA3AF" />
-            <Text style={[styles.followUpButtonText, { color: '#9CA3AF' }]}>
-              {daysRemaining}d left
-            </Text>
-          </View>
-        );
-      }
-
-      return (
-        <TouchableOpacity
-          style={styles.followUpButton}
-          onPress={() => router.push({
-            pathname: '/trip/follow-up',
-            params: { tripId: trip.id, followUpType: type }
-          })}
-        >
-          <MaterialIcons name="schedule" size={20} color="#5196F4" />
-          <Text style={styles.followUpButtonText}>
-            {type === '7-day' ? '7d' : type === '14-day' ? '14d' : '30d'} Follow-up
-          </Text>
-        </TouchableOpacity>
-      );
-    };
-
-    const getIntentionRatingData = (intention: Intention) => {
-      if (!intention.ratings?.length) return null;
-
-      const categories = [
-        { type: 'post-trip', label: 'Post' },
-        { type: '7-day', label: '7d' },
-        { type: '14-day', label: '14d' },
-        { type: '30-day', label: '30d' }
-      ];
-
-      return {
-        labels: categories.map(cat => cat.label),
-        datasets: [{
-          data: categories.map(cat => {
-            const rating = intention.ratings?.find(r => r.type === cat.type);
-            return rating?.value || 0;
-          })
-        }]
-      };
-    };
-
     const ratingData = getRatingData(trip);
 
     return (
       <View style={styles.tripCard}>
         <TouchableOpacity
           style={styles.tripHeader}
-          onPress={() => setIsExpanded(!isExpanded)}
+          onPress={() => setExpandedTrip(isExpanded ? null : trip.id)}
         >
           <View style={styles.tripHeaderContent}>
-            <Text style={styles.tripDate}>{formatDate(trip.startTime)}</Text>
-            <Text style={styles.tripTime}>
-              {formatTime(trip.startTime)} - {formatTime(trip.endTime)}
+            <Text style={styles.tripTitle}>
+              {trip.dose?.name || `Trip on ${new Date(trip.startTime).toLocaleDateString()}`}
             </Text>
+            <View>
+              <Text style={styles.tripDate}>
+                {new Date(trip.startTime).toLocaleDateString()}
+              </Text>
+              <Text style={styles.tripTime}>
+                {new Date(trip.startTime).toLocaleTimeString([], { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}
+              </Text>
+            </View>
           </View>
           <MaterialIcons
             name={isExpanded ? 'expand-less' : 'expand-more'}
@@ -281,6 +330,19 @@ export default function HistoryScreen() {
 
         {isExpanded && (
           <View style={styles.tripContent}>
+            {/* Rate Now Button for unrated trips with intentions */}
+            {!trip.postTripRated && trip.intentions && trip.intentions.length > 0 && (
+              <View style={styles.rateNowContainer}>
+                <TouchableOpacity
+                  style={styles.rateNowButton}
+                  onPress={() => handleRateTrip(trip)}
+                >
+                  <MaterialIcons name="star" size={20} color="#FFFFFF" />
+                  <Text style={styles.rateNowButtonText}>Rate Now</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Dose Information */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Dose Information</Text>
@@ -293,12 +355,13 @@ export default function HistoryScreen() {
 
             {/* Intentions */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Intentions</Text>
+              <Text style={styles.sectionTitle}>
+                {trip.intentions.length === 1 ? 'Intention' : 'Intentions'}
+              </Text>
               {trip.intentions.map(intention => (
                 <View key={intention.id} style={styles.intentionCard}>
                   <View style={styles.intentionHeader}>
                     <View style={styles.intentionHeaderContent}>
-                      <Text style={styles.emoji}>{intention.emoji}</Text>
                       <View style={styles.intentionTitleContainer}>
                         <Text style={styles.intentionText}>{intention.text}</Text>
                         {intention.description && (
@@ -308,17 +371,20 @@ export default function HistoryScreen() {
                         )}
                       </View>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => setExpandedIntention(
-                        expandedIntention === intention.id ? null : intention.id
-                      )}
-                    >
-                      <MaterialIcons
-                        name={expandedIntention === intention.id ? 'expand-less' : 'expand-more'}
-                        size={24}
-                        color="#666"
-                      />
-                    </TouchableOpacity>
+                    <View style={styles.intentionRightContent}>
+                      {renderRatingTimeline(intention)}
+                      <TouchableOpacity
+                        onPress={() => setExpandedIntention(
+                          expandedIntention === intention.id ? null : intention.id
+                        )}
+                      >
+                        <MaterialIcons
+                          name={expandedIntention === intention.id ? 'expand-less' : 'expand-more'}
+                          size={24}
+                          color="#666"
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   {expandedIntention === intention.id && (
@@ -404,9 +470,9 @@ export default function HistoryScreen() {
                       <View style={styles.followUpSection}>
                         <Text style={styles.followUpTitle}>Integration Follow-ups</Text>
                         <View style={styles.followUpButtons}>
-                          {getFollowUpButton('7-day', intention)}
-                          {getFollowUpButton('14-day', intention)}
-                          {getFollowUpButton('30-day', intention)}
+                          {getFollowUpButton('7-day', intention, trip)}
+                          {getFollowUpButton('14-day', intention, trip)}
+                          {getFollowUpButton('30-day', intention, trip)}
                         </View>
                       </View>
 
@@ -453,18 +519,18 @@ export default function HistoryScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
       <View style={styles.header}>
         <Text style={styles.title}>Trip History</Text>
       </View>
-      {tripHistory.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No trips recorded yet</Text>
-        </View>
-      ) : (
-        tripHistory.map(renderTripCard)
-      )}
-    </ScrollView>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {tripHistory.map((trip) => renderTripCard(trip))}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -474,47 +540,56 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
   },
   header: {
-    padding: 20,
     backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#111827',
   },
   tripCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
+    padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   tripHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   tripHeaderContent: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  tripDate: {
-    fontSize: 16,
+  tripTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#111827',
+    flex: 1,
+    marginRight: 8,
+  },
+  tripDate: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 4,
   },
   tripTime: {
     fontSize: 14,
     color: '#6B7280',
-    marginTop: 4,
   },
   tripContent: {
     padding: 16,
@@ -702,5 +777,71 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  rateNowContainer: {
+    marginBottom: 16,
+  },
+  rateNowButton: {
+    backgroundColor: '#5196F4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  rateNowButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  intentionRightContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 140,
+  },
+  timelineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineDotActive: {
+    backgroundColor: '#5196F4',
+  },
+  timelineDotInactive: {
+    backgroundColor: '#E5E7EB',
+  },
+  timelineDotText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  timelineDotTextActive: {
+    color: '#FFFFFF',
+  },
+  timelineDotTextInactive: {
+    color: '#9CA3AF',
+  },
+  timelineLine: {
+    width: 12,
+    height: 2,
+  },
+  timelineLineActive: {
+    backgroundColor: '#5196F4',
+  },
+  timelineLineInactive: {
+    backgroundColor: '#E5E7EB',
   },
 }); 

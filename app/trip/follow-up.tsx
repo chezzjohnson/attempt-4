@@ -101,12 +101,13 @@ export default function FollowUpScreen() {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.subtitle}>Rate your integration of intentions</Text>
+        <Text style={styles.subtitle}>
+          Rate your integration of {trip.intentions.length === 1 ? 'intention' : 'intentions'}
+        </Text>
         
         {trip.intentions.map(intention => (
           <View key={intention.id} style={styles.intentionCard}>
             <View style={styles.intentionHeader}>
-              <Text style={styles.emoji}>{intention.emoji}</Text>
               <Text style={styles.intentionText}>{intention.text}</Text>
             </View>
             
@@ -203,10 +204,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
-  },
-  emoji: {
-    fontSize: 24,
-    marginRight: 12,
   },
   intentionText: {
     fontSize: 16,

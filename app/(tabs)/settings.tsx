@@ -1,6 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTripSitter } from '../../contexts/TripSitterContext';
 
 export default function SettingsScreen() {
@@ -48,91 +48,97 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Settings</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 40, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <Text style={styles.title}>Settings</Text>
 
-        {/* Trip Sitter Management Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Trip Sitters</Text>
-            <Pressable
-              style={styles.addButton}
-              onPress={() => setIsAddingSitter(true)}
-            >
-              <MaterialIcons name="add" size={24} color="#0967D2" />
-            </Pressable>
-          </View>
-
-          {/* Add New Sitter Form */}
-          {isAddingSitter && (
-            <View style={styles.addSitterForm}>
-              <TextInput
-                style={styles.input}
-                placeholder="Name"
-                value={newSitter.name}
-                onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
-                editable={!isSaving}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Phone Number"
-                value={newSitter.phone}
-                onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
-                keyboardType="phone-pad"
-                editable={!isSaving}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Relationship"
-                value={newSitter.relationship}
-                onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
-                editable={!isSaving}
-              />
-              <View style={styles.formButtons}>
-                <Pressable
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={() => setIsAddingSitter(false)}
-                  disabled={isSaving}
-                >
-                  <Text style={styles.buttonText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
-                  onPress={handleAddSitter}
-                  disabled={isSaving}
-                >
-                  {isSaving ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <Text style={[styles.buttonText, styles.saveButtonText]}>Save</Text>
-                  )}
-                </Pressable>
-              </View>
+          {/* Trip Sitter Management Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Trip Sitters</Text>
+              <Pressable
+                style={styles.addButton}
+                onPress={() => setIsAddingSitter(true)}
+              >
+                <MaterialIcons name="add" size={24} color="#0967D2" />
+              </Pressable>
             </View>
-          )}
 
-          {/* Trip Sitter List */}
-          <View style={styles.sitterList}>
-            {tripSitters.map((sitter) => (
-              <View key={sitter.id} style={styles.sitterCard}>
-                <View style={styles.sitterInfo}>
-                  <Text style={styles.sitterName}>{sitter.name}</Text>
-                  <Text style={styles.sitterDetails}>{sitter.phone}</Text>
-                  <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
+            {/* Add New Sitter Form */}
+            {isAddingSitter && (
+              <View style={styles.addSitterForm}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Name"
+                  value={newSitter.name}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
+                  editable={!isSaving}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone Number"
+                  value={newSitter.phone}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
+                  keyboardType="phone-pad"
+                  editable={!isSaving}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Relationship"
+                  value={newSitter.relationship}
+                  onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
+                  editable={!isSaving}
+                />
+                <View style={styles.formButtons}>
+                  <Pressable
+                    style={[styles.button, styles.cancelButton]}
+                    onPress={() => setIsAddingSitter(false)}
+                    disabled={isSaving}
+                  >
+                    <Text style={styles.buttonText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
+                    onPress={handleAddSitter}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <Text style={[styles.buttonText, styles.saveButtonText]}>Save</Text>
+                    )}
+                  </Pressable>
                 </View>
-                <Pressable
-                  style={styles.deleteButton}
-                  onPress={() => handleDeleteSitter(sitter.id)}
-                >
-                  <MaterialIcons name="delete" size={24} color="#E12D39" />
-                </Pressable>
               </View>
-            ))}
+            )}
+
+            {/* Trip Sitter List */}
+            <View style={styles.sitterList}>
+              {tripSitters.map((sitter) => (
+                <View key={sitter.id} style={styles.sitterCard}>
+                  <View style={styles.sitterInfo}>
+                    <Text style={styles.sitterName}>{sitter.name}</Text>
+                    <Text style={styles.sitterDetails}>{sitter.phone}</Text>
+                    <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
+                  </View>
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteSitter(sitter.id)}
+                  >
+                    <MaterialIcons name="delete" size={24} color="#E12D39" />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
           </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

@@ -102,10 +102,14 @@ export default function ReviewScreen() {
         {/* Intentions Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Intentions</Text>
+            <Text style={styles.sectionTitle}>
+              {tripState.intentions.length === 1 ? 'Intention' : 'Intentions'}
+            </Text>
             <StatusBox 
               status={tripState.intentions.length > 0 ? "ready" : "not-ready"} 
-              text={tripState.intentions.length > 0 ? "Intentions: Set" : "No intentions set"} 
+              text={tripState.intentions.length > 0 
+                ? (tripState.intentions.length === 1 ? "Intention: Set" : "Intentions: Set") 
+                : "No intentions set"} 
             />
           </View>
           {tripState.intentions.length > 0 ? (

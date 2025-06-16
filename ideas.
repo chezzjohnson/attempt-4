@@ -1,0 +1,54 @@
+// general //
+    fit everything to screen 
+
+// hsitory //
+    delte past trips (towo confirmmaiton messages)
+    titel for each trip on trip hsitory should be the titel andn small time on the side 
+    scrolalbele ot the bottom 
+    add notes 
+    add minimalk scren mode durign active trip screen (removes most everything, only showin time)
+    create clear frame and collapsible for intention grahp 
+    need upcoming intention rating screens 
+    add notes during each intention follow up rating 
+    add notes to follow up intention on any date
+    group ntoes for each intention by color/durring trip (which hourr of trip) -- after-trip -- or x days after the notes written 
+    make hsitory tab have borders/frame around all information with colors + 'trip cx days ago' info+ frame 
+    graph does not fit the frame
+
+// Intentions tab //
+    own screen for upcoming Intentions ratings 
+    up down arrows for past intentions that are currently integrating (raitng hsitorry )
+    show past intentoins 
+    integration or cross-trip inttenions 
+        - can select intetion form dropdown menu of prior intentions 
+    organzie itnetnoins by category   
+
+// active trip screen //
+    add minimalk screen mode button durign active trip screen (removes most everything, only showin time)
+    fix textbox it sucks 
+    add intentiond mid trip.     
+
+// pre-trip screen//
+add quotes 
+    remove emoji and description requirement for intention on pre-trip screen
+    add ability to add exact dose levle (dose type is just forr categories)
+    Add backup plan note option which cnan be accessed by a button on teh activ trip screen
+    make name of the trip in 
+        pre
+        post trip screen
+        +   during the active trip scren 
+
+// home //
+    visual graph on home screen of how intentiosn ahve been ddoing
+    view hisotryy does not link ot hisotry (add animation)
+    recent trip should be displaeyeyd showing trips within the last 'x' days
+
+// Existing beef up // 
+    UI/UX Polish: Refine layouts, spacing, colors, and interactions for clarity and delight.
+    Validation & Error Handling: Make sure all forms and flows handle errors gracefully.
+    Edge Cases: Test and fix any odd behaviors (e.g., empty states, long text, etc.).
+    Performance: Optimize any slow screens or heavy operations.
+    Accessibility: Improve text contrast, button sizes, and add accessibility labels.
+    Persistence & Data Integrity: Ensure all data is saved/retrieved correctly, even after app restarts.
+    User Feedback: Add subtle animations, confirmations, or toasts for actions.
+    Documentation: Add comments or docs for tricky parts of the code.
