@@ -2,7 +2,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useTrip } from '../../contexts/TripContext';
+import { useIntentions } from '../../contexts/IntentionsContext';
+import { Intention, TripHistory, useTrip } from '../../contexts/TripContext';
 
 const RATING_LABELS = {
   1: 'Not at all',
@@ -40,6 +41,7 @@ export default function PostTripScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { tripState, updateTrip, tripHistory, updateTripHistory } = useTrip();
+  const { updateIntentionRating } = useIntentions();
   const [isLoading, setIsLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -47,6 +49,7 @@ export default function PostTripScreen() {
   const [showRateLater, setShowRateLater] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTrip, setCurrentTrip] = useState<TripHistory | null>(null);
   const navigationListenerRef = useRef<(() => void) | undefined>(undefined);
 
   // Prevent navigation away while saving
@@ -64,25 +67,59 @@ export default function PostTripScreen() {
     };
   }, [isSaving, navigation]);
 
-  // Initialize ratings when intentions are available
+  // Get the most recent trip from history (the one that was just ended)
   useEffect(() => {
-    if (tripState.intentions && tripState.intentions.length > 0) {
-      setRatings(
-        tripState.intentions.map(intention => ({
-          intentionId: intention.id,
-          rating: null
-        }))
-      );
-      setIsLoading(false);
-    } else {
-      // If no intentions after 5 seconds, stop loading
-      const timeout = setTimeout(() => {
-        setIsLoading(false);
-      }, 5000);
+    if (tripHistory.length > 0) {
+      const mostRecentTrip = tripHistory[0]; // Most recent trip is first in the array
+      setCurrentTrip(mostRecentTrip);
       
-      return () => clearTimeout(timeout);
+      if (mostRecentTrip.intentions && mostRecentTrip.intentions.length > 0) {
+        setRatings(
+          mostRecentTrip.intentions.map(intention => ({
+            intentionId: intention.id,
+            rating: null
+          }))
+        );
+        setIsLoading(false);
+      } else {
+        setIsLoading(false);
+      }
+    } else {
+      // If no history, try to use trip state as fallback
+      if (tripState.intentions && tripState.intentions.length > 0) {
+        // Convert TripState to TripHistory format for consistency
+        const tripAsHistory: TripHistory = {
+          id: tripState.id || `trip-${Date.now()}`,
+          startTime: tripState.startTime || new Date(),
+          endTime: new Date(), // Use current time as end time
+          dose: tripState.dose,
+          set: tripState.set,
+          setting: tripState.setting,
+          safety: tripState.safety,
+          tripSitter: tripState.tripSitter,
+          intentions: tripState.intentions,
+          generalNotes: tripState.generalNotes,
+          postTripRated: tripState.postTripRated
+        };
+        setCurrentTrip(tripAsHistory);
+        setRatings(
+          tripState.intentions.map(intention => ({
+            intentionId: intention.id,
+            rating: null
+          }))
+        );
+        setIsLoading(false);
+      } else {
+        // If no intentions after 5 seconds, stop loading
+        const timeout = setTimeout(() => {
+          setIsLoading(false);
+          console.log('No intentions found in trip history or state');
+        }, 5000);
+        
+        return () => clearTimeout(timeout);
+      }
     }
-  }, [tripState.intentions]);
+  }, [tripHistory, tripState.intentions]);
 
   const handleRating = (intentionId: string, rating: number) => {
     setRatings(prev => 
@@ -113,7 +150,7 @@ export default function PostTripScreen() {
                 setShowRateLater(true);
                 // Update the trip in history
                 const updatedHistory = tripHistory.map(trip => {
-                  if (trip.startTime.getTime() === tripState.startTime?.getTime()) {
+                  if (trip.id === currentTrip?.id) {
                     return {
                       ...trip,
                       postTripRated: false
@@ -122,11 +159,7 @@ export default function PostTripScreen() {
                   return trip;
                 });
 
-                // Update both trip state and history
-                await updateTrip({
-                  ...tripState,
-                  postTripRated: false
-                });
+                // Update history
                 await updateTripHistory(updatedHistory);
 
                 // Show success notification
@@ -150,8 +183,8 @@ export default function PostTripScreen() {
                   router.replace('/(tabs)/history');
                 });
               } catch (error) {
-                console.error('Error saving rate later state:', error);
-                setError('Failed to save. Please try again.');
+                console.error('Error saving for later:', error);
+                setError('Failed to save for later. Please try again.');
               } finally {
                 setIsSaving(false);
               }
@@ -171,43 +204,37 @@ export default function PostTripScreen() {
       setIsSaving(true);
       setError(null);
 
-      if (!tripState.intentions) {
-        throw new Error('No intentions found in trip state');
+      if (!currentTrip?.intentions || currentTrip.intentions.length === 0) {
+        throw new Error('No intentions found in trip');
       }
 
-      const ratedIntentions = tripState.intentions.map(intention => {
+      // Ensure trip has a proper ID
+      const tripId = currentTrip.id || `trip-${Date.now()}`;
+
+      // Save ratings to IntentionsContext
+      currentTrip.intentions.forEach((intention: Intention) => {
         const rating = ratings.find(r => r.intentionId === intention.id);
-        return {
-          ...intention,
-          ratings: [
-            ...(intention.ratings || []),
-            {
-              type: 'post-trip' as const,
-              value: rating?.rating || null,
-              timestamp: new Date()
-            }
-          ]
-        };
+        if (rating?.rating !== null && rating?.rating !== undefined) {
+          updateIntentionRating(intention.id, tripId, {
+            type: 'post-trip',
+            value: rating.rating,
+            timestamp: new Date()
+          });
+        }
       });
 
       // Update the trip in history
       const updatedHistory = tripHistory.map(trip => {
-        if (trip.startTime.getTime() === tripState.startTime?.getTime()) {
+        if (trip.id === tripId) {
           return {
             ...trip,
-            intentions: ratedIntentions,
             postTripRated: !showRateLater
           };
         }
         return trip;
       });
 
-      // Update both trip state and history
-      await updateTrip({
-        ...tripState,
-        intentions: ratedIntentions,
-        postTripRated: !showRateLater
-      });
+      // Update history
       await updateTripHistory(updatedHistory);
 
       // Show success notification
@@ -231,8 +258,8 @@ export default function PostTripScreen() {
         router.replace('/(tabs)/history');
       });
     } catch (error) {
-      console.error('Error in handleSave:', error);
-      setError(error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.');
+      console.error('Error saving ratings:', error);
+      setError('Failed to save ratings. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -260,13 +287,17 @@ export default function PostTripScreen() {
               setError(null);
               setIsLoading(true);
               // Retry loading data
-              if (tripState.intentions && tripState.intentions.length > 0) {
-                setRatings(
-                  tripState.intentions.map(intention => ({
-                    intentionId: intention.id,
-                    rating: null
-                  }))
-                );
+              if (tripHistory.length > 0) {
+                const mostRecentTrip = tripHistory[0];
+                setCurrentTrip(mostRecentTrip);
+                if (mostRecentTrip.intentions && mostRecentTrip.intentions.length > 0) {
+                  setRatings(
+                    mostRecentTrip.intentions.map(intention => ({
+                      intentionId: intention.id,
+                      rating: null
+                    }))
+                  );
+                }
                 setIsLoading(false);
               }
             }}
@@ -278,15 +309,15 @@ export default function PostTripScreen() {
     );
   }
 
-  if (!tripState.intentions || tripState.intentions.length === 0) {
+  if (!currentTrip?.intentions || currentTrip.intentions.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>
-            {tripState.intentions.length === 1 ? 'No Intention to Rate' : 'No Intentions to Rate'}
+            {currentTrip?.intentions?.length === 1 ? 'No Intention to Rate' : 'No Intentions to Rate'}
           </Text>
           <Text style={styles.subtitle}>
-            This trip doesn't have any {tripState.intentions.length === 1 ? 'intention' : 'intentions'} to rate. You can add {tripState.intentions.length === 1 ? 'an intention' : 'intentions'} before starting your next trip.
+            This trip doesn't have any {currentTrip?.intentions?.length === 1 ? 'intention' : 'intentions'} to rate. You can add {currentTrip?.intentions?.length === 1 ? 'an intention' : 'intentions'} before starting your next trip.
           </Text>
         </View>
         <View style={styles.footer}>
@@ -316,10 +347,10 @@ export default function PostTripScreen() {
           <MaterialIcons name="check-circle" size={24} color="#fff" />
           <Text style={styles.successText}>
             {showRateLater 
-              ? (tripState.intentions.length === 1 
+              ? (currentTrip.intentions.length === 1 
                 ? "Intention saved for later rating" 
                 : "Intentions saved for later rating")
-              : (tripState.intentions.length === 1
+              : (currentTrip.intentions.length === 1
                 ? "Rating Saved Successfully!"
                 : "Ratings Saved Successfully!")
             }
@@ -335,7 +366,7 @@ export default function PostTripScreen() {
           </Text>
         </View>
 
-        {tripState.intentions.map((intention) => {
+        {currentTrip.intentions.map((intention: Intention) => {
           const currentRating = ratings.find(r => r.intentionId === intention.id)?.rating;
           return (
             <View key={intention.id} style={styles.intentionCard}>
@@ -376,17 +407,18 @@ export default function PostTripScreen() {
         <Pressable
           style={[styles.button, styles.rateLaterButton]}
           onPress={handleRateLater}
+          disabled={isSaving}
         >
-          <Text style={[styles.buttonText, styles.rateLaterButtonText]}>Rate Later</Text>
+          <Text style={styles.buttonText}>Rate Later</Text>
         </Pressable>
         <Pressable
           style={[
-            styles.button,
+            styles.button, 
             styles.saveButton,
-            (!allRated && !showRateLater) && styles.buttonDisabled
+            !allRated && styles.saveButtonDisabled
           ]}
           onPress={handleSave}
-          disabled={!allRated && !showRateLater}
+          disabled={!allRated || isSaving}
         >
           <Text style={styles.buttonText}>Save Ratings</Text>
         </Pressable>
@@ -513,7 +545,7 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#0967D2',
   },
-  buttonDisabled: {
+  saveButtonDisabled: {
     backgroundColor: '#9CA3AF',
   },
   buttonText: {

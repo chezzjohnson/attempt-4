@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useTrip } from '../../contexts/TripContext';
 
 const DOSE_LEVELS = [
@@ -130,161 +130,193 @@ export default function DoseSelectionScreen() {
     }
   };
 
+  const handleBack = () => {
+    Alert.alert(
+      'Cancel Trip Creation',
+      'Are you sure you want to cancel creating a new trip? All progress will be lost.',
+      [
+        { text: 'Keep Editing', style: 'cancel' },
+        { text: 'Cancel Trip', style: 'destructive', onPress: () => router.back() },
+      ]
+    );
+  };
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Select Your Dose</Text>
-          <Text style={styles.subtitle}>
-            Choose a dose level that matches your experience and intentions
-          </Text>
-        </View>
-
-        {/* Exact Dose Input */}
-        <View style={styles.exactDoseContainer}>
-          <Text style={styles.sectionTitle}>Enter Exact Dose</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={exactDose}
-              onChangeText={handleExactDoseChange}
-              placeholder="Input exact dose level"
-              keyboardType="decimal-pad"
-              maxLength={5}
-            />
-            <Text style={styles.unitText}>g</Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              (!exactDose || isDoseSaved) && styles.disabledButton
-            ]}
-            onPress={handleSaveExactDose}
-            disabled={!exactDose || isDoseSaved}
-          >
-            <Text style={[
-              styles.saveButtonText,
-              isDoseSaved && styles.disabledButtonText
-            ]}>
-              {isDoseSaved ? 'Dose Saved' : 'Save Exact Dose'}
-            </Text>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        style={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.content}>
+          {/* Back Button */}
+          <TouchableOpacity onPress={handleBack} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            <MaterialIcons name="arrow-back" size={24} color="#0967D2" />
+            <Text style={{ color: '#0967D2', fontSize: 16, marginLeft: 4 }}>Back</Text>
           </TouchableOpacity>
-        </View>
-
-        {/* Selected Dose Display */}
-        {(selectedDose || (exactDose && isDoseSaved)) && (
-          <View style={styles.selectedDoseContainer}>
-            <Text style={styles.selectedDoseText}>
-              {exactDose && isDoseSaved
-                ? `${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
-                : selectedDose}
+          {/* Header Section */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Select Your Dose</Text>
+            <Text style={styles.subtitle}>
+              Choose a dose level that matches your experience and intentions
             </Text>
           </View>
-        )}
 
-        {/* Dose Level Cards */}
-        <View style={styles.cardsContainer}>
-          {DOSE_LEVELS.map((dose) => (
-            <TouchableOpacity
-              key={dose.name}
-              style={[
-                styles.card,
-                selectedDose === dose.name && styles.selectedCard,
-              ]}
-              onPress={() => handleDoseSelect(dose.name)}
-            >
-              <View style={styles.cardContent}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.titleContainer}>
-                    <Text style={styles.doseName}>{dose.name}</Text>
-                    {dose.requiresWarning && (
-                      <MaterialIcons
-                        name="warning"
-                        size={24}
-                        color="#E12D39"
-                        style={styles.warningIcon}
-                      />
-                    )}
-                  </View>
-                  <Text style={styles.doseRange}>{dose.range}</Text>
-                  <Text style={styles.doseDescription}>
-                    {dose.description}
-                    {dose.requiresWarning && 
-                      ' - Recommended for experienced users only'}
-                  </Text>
-                </View>
-
-                <View style={styles.intensityContainer}>
-                  <Text style={styles.intensityLabel}>Intensity Level</Text>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill,
-                        { width: `${dose.intensity * 20}%` }
-                      ]} 
-                    />
-                  </View>
-                </View>
-
-                <Pressable
-                  style={[
-                    styles.selectButton,
-                    selectedDose === dose.name && styles.selectedButton
-                  ]}
-                  onPress={() => handleDoseSelect(dose.name)}
-                >
-                  <Text style={[
-                    styles.buttonText,
-                    selectedDose === dose.name && styles.selectedButtonText
-                  ]}>
-                    {selectedDose === dose.name ? 'Selected' : 'Select'}
-                  </Text>
-                </Pressable>
+          {/* Exact Dose Input */}
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.exactDoseContainer}>
+              <Text style={styles.sectionTitle}>Enter Exact Dose</Text>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={exactDose}
+                  onChangeText={handleExactDoseChange}
+                  placeholder="Input exact dose level"
+                  keyboardType="decimal-pad"
+                  maxLength={5}
+                  returnKeyType="done"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                />
+                <Text style={styles.unitText}>g</Text>
               </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  (!exactDose || isDoseSaved) && styles.disabledButton
+                ]}
+                onPress={handleSaveExactDose}
+                disabled={!exactDose || isDoseSaved}
+              >
+                <Text style={[
+                  styles.saveButtonText,
+                  isDoseSaved && styles.disabledButtonText
+                ]}>
+                  {isDoseSaved ? 'Dose Saved' : 'Save Exact Dose'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
 
-        {/* Safety Note */}
-        <View style={styles.safetyCard}>
-          <View style={styles.safetyContent}>
-            <MaterialIcons
-              name="warning"
-              size={24}
-              color="#F59E0B"
-              style={styles.safetyIcon}
-            />
-            <Text style={styles.safetyText}>
-              Always start with a lower dose if you're unsure. You can always
-              take more, but you can't take less.
-            </Text>
+          {/* Selected Dose Display */}
+          {(selectedDose || (exactDose && isDoseSaved)) && (
+            <View style={styles.selectedDoseContainer}>
+              <Text style={styles.selectedDoseText}>
+                {exactDose && isDoseSaved
+                  ? `${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
+                  : selectedDose}
+              </Text>
+            </View>
+          )}
+
+          {/* Dose Level Cards */}
+          <View style={styles.cardsContainer}>
+            {DOSE_LEVELS.map((dose) => (
+              <TouchableOpacity
+                key={dose.name}
+                style={[
+                  styles.card,
+                  selectedDose === dose.name && styles.selectedCard,
+                ]}
+                onPress={() => handleDoseSelect(dose.name)}
+              >
+                <View style={styles.cardContent}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.titleContainer}>
+                      <Text style={styles.doseName}>{dose.name}</Text>
+                      {dose.requiresWarning && (
+                        <MaterialIcons
+                          name="warning"
+                          size={24}
+                          color="#E12D39"
+                          style={styles.warningIcon}
+                        />
+                      )}
+                    </View>
+                    <Text style={styles.doseRange}>{dose.range}</Text>
+                    <Text style={styles.doseDescription}>
+                      {dose.description}
+                      {dose.requiresWarning && 
+                        ' - Recommended for experienced users only'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.intensityContainer}>
+                    <Text style={styles.intensityLabel}>Intensity Level</Text>
+                    <View style={styles.progressBar}>
+                      <View 
+                        style={[
+                          styles.progressFill,
+                          { width: `${dose.intensity * 20}%` }
+                        ]} 
+                      />
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={[
+                      styles.selectButton,
+                      selectedDose === dose.name && styles.selectedButton
+                    ]}
+                    onPress={() => handleDoseSelect(dose.name)}
+                  >
+                    <Text style={[
+                      styles.buttonText,
+                      selectedDose === dose.name && styles.selectedButtonText
+                    ]}>
+                      {selectedDose === dose.name ? 'Selected' : 'Select'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
 
-        {/* Continue Button */}
-        <Pressable
-          style={[styles.continueButton, !selectedDose && !exactDose && styles.disabledButton]}
-          onPress={handleContinue}
-          disabled={!selectedDose && !exactDose}
-        >
-          <Text style={styles.continueButtonText}>
-            Continue to Set & Setting
-          </Text>
-        </Pressable>
-
-        {/* Saved Message */}
-        {showSavedMessage && (
-          <View style={styles.savedMessage}>
-            <Text style={styles.savedMessageText}>
-              {exactDose 
-                ? `Saved ${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
-                : `Saved ${selectedDose} dose`}
-            </Text>
+          {/* Safety Note */}
+          <View style={styles.safetyCard}>
+            <View style={styles.safetyContent}>
+              <MaterialIcons
+                name="warning"
+                size={24}
+                color="#F59E0B"
+                style={styles.safetyIcon}
+              />
+              <Text style={styles.safetyText}>
+                Always start with a lower dose if you're unsure. You can always
+                take more, but you can't take less.
+              </Text>
+            </View>
           </View>
-        )}
-      </View>
-    </ScrollView>
+
+          {/* Continue Button */}
+          <Pressable
+            style={[styles.continueButton, !selectedDose && !exactDose && styles.disabledButton]}
+            onPress={handleContinue}
+            disabled={!selectedDose && !exactDose}
+          >
+            <Text style={styles.continueButtonText}>
+              Continue to Set & Setting
+            </Text>
+          </Pressable>
+
+          {/* Saved Message */}
+          {showSavedMessage && (
+            <View style={styles.savedMessage}>
+              <Text style={styles.savedMessageText}>
+                {exactDose 
+                  ? `Saved ${exactDose}g ${selectedDose ? `(${selectedDose})` : ''}`
+                  : `Saved ${selectedDose} dose`}
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

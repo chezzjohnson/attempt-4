@@ -1,79 +1,423 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Dimensions, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { LineChart } from 'react-native-chart-kit';
-import type { Intention, Note, TripHistory } from '../../contexts/TripContext';
-import { useTrip } from '../../contexts/TripContext';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Button } from '../../components/ui/Button';
+import { CardContainer } from '../../components/ui/Layout';
+import { BodyText, Caption, Heading, Label } from '../../components/ui/Typography';
+import { Colors, Spacing } from '../../constants/DesignSystem';
+import { useIntentions } from '../../contexts/IntentionsContext';
+import { Intention, Note, TripHistory, useTrip } from '../../contexts/TripContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-interface Trip {
-  id: string;
-  startTime: Date;
-  endTime: Date;
-  dose: {
-    name: string;
-    range: string;
-    description: string;
-  } | null;
-  set: {
-    mentalState: string;
-    description: string;
-  } | null;
-  setting: string;
-  safety: {
-    environment: boolean;
-    mental: boolean;
-    emergencyPlan: boolean;
-    tripSitter: boolean;
-    tripSitterInfo: null;
-  };
-  tripSitter: {
-    name: string;
-    phoneNumber: string;
-    relationship: string;
-  } | null;
-  intentions: {
-    id: string;
-    emoji: string;
-    text: string;
-    description?: string;
-    notes?: {
-      id: string;
-      content: string;
-      timestamp: Date;
-      type: 'during' | 'post' | 'followup';
-      followupDay?: number;
-    }[];
-    ratings?: {
-      type: 'post-trip' | '7-day' | '14-day' | '30-day' | 'followup';
-      value: number | null;
-      timestamp: Date;
-    }[];
-  }[];
-  generalNotes: {
-    id: string;
-    content: string;
-    timestamp: Date;
-    type: 'during' | 'post' | 'followup';
-    followupDay?: number;
-  }[];
-  postTripRated: boolean;
-}
-
 export default function HistoryScreen() {
   const router = useRouter();
-  const { tripHistory, updateTrip, tripState } = useTrip();
+  const { tripHistory, updateTripHistory, tripState, updateTrip } = useTrip();
+  const { intentions, getIntentionUsageCount } = useIntentions();
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
-  const [expandedIntention, setExpandedIntention] = useState<string | null>(null);
+  const [expandedIntentions, setExpandedIntentions] = useState<Set<string>>(new Set());
+  const [animatingTrips, setAnimatingTrips] = useState<Record<string, boolean>>({});
+  const [animatingIntentions, setAnimatingIntentions] = useState<Record<string, boolean>>({});
+  const [selectedIntention, setSelectedIntention] = useState<Intention | null>(null);
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [newNoteHeader, setNewNoteHeader] = useState('');
+  const [selectedNoteType, setSelectedNoteType] = useState<Note['type']>('x-days');
+  const [expandedNoteGroups, setExpandedNoteGroups] = useState<Record<Note['type'], boolean>>({
+    'during': true,
+    'post-trip': true,
+    'x-days': true,
+    '7d': true,
+    '14d': true,
+    '30d': true
+  });
+  const [expandedIntentionNoteGroups, setExpandedIntentionNoteGroups] = useState<Record<string, Record<Note['type'], boolean>>>({});
+  
+  // Toast state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [lastAddedNoteId, setLastAddedNoteId] = useState<string | null>(null);
+  
+  // Note editing modal state
+  const [showNoteEditModal, setShowNoteEditModal] = useState(false);
+  const [editingNote, setEditingNote] = useState<{
+    note: Note;
+    trip: TripHistory;
+    intention?: Intention;
+    isGeneralNote: boolean;
+  } | null>(null);
+  const [editingNoteHeader, setEditingNoteHeader] = useState('');
+  const [editingNoteBody, setEditingNoteBody] = useState('');
+
+  // Animation values
+  const tripAnimations = useRef<Record<string, Animated.Value>>({});
+  const intentionAnimations = useRef<Record<string, Animated.Value>>({});
+  const tripArrowAnimations = useRef<Record<string, Animated.Value>>({});
+  const intentionArrowAnimations = useRef<Record<string, Animated.Value>>({});
+  const [tripHeights, setTripHeights] = useState<Record<string, number>>({});
+  const [intentionHeights, setIntentionHeights] = useState<Record<string, number>>({});
+
+  // Refs for text inputs
+  const titleInputRef = useRef<TextInput>(null);
+  const notesInputRef = useRef<TextInput>(null);
+  const editTitleInputRef = useRef<TextInput>(null);
+  const editNotesInputRef = useRef<TextInput>(null);
+
+  // 1. Add Animated values for opacity and translateY
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTranslateY = useRef(new Animated.Value(20)).current;
+
+  // 2. Update showToastMessage to animate in/out
+  const showToastMessage = (message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    Animated.parallel([
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(toastTranslateY, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastTranslateY, {
+          toValue: 20,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setShowToast(false));
+    }, 2000);
+  };
+
+  // Note editing functions
+  const openNoteEditModal = (note: Note, trip: TripHistory, intention?: Intention, isGeneralNote: boolean = false) => {
+    // Extract header from first line of note content for existing notes
+    const lines = note.content.split('\n');
+    const header = lines[0] || '';
+    const body = lines.length > 1 ? lines.slice(1).join('\n') : '';
+    
+    setEditingNote({ note, trip, intention, isGeneralNote });
+    setEditingNoteHeader(header);
+    setEditingNoteBody(body);
+    setShowNoteEditModal(true);
+  };
+
+  const saveNoteEdit = () => {
+    if (!editingNote || !editingNoteHeader.trim()) {
+      showToastMessage('Note header is required');
+      return;
+    }
+
+    const updatedContent = editingNoteHeader.trim() + (editingNoteBody.trim() ? '\n' + editingNoteBody.trim() : '');
+    
+    const updatedNote: Note = {
+      ...editingNote.note,
+      content: updatedContent
+    };
+
+    if (editingNote.isGeneralNote) {
+      // Update general note
+      const updatedTrip = {
+        ...editingNote.trip,
+        generalNotes: editingNote.trip.generalNotes.map(n => 
+          n.id === editingNote.note.id ? updatedNote : n
+        )
+      };
+      
+      const updatedHistory = tripHistory.map(t => 
+        t.id === editingNote.trip.id ? updatedTrip : t
+      );
+      
+      updateTripHistory(updatedHistory);
+    } else {
+      // Update intention note
+      if (!editingNote.intention) return;
+      
+      const updatedIntention = {
+        ...editingNote.intention,
+        notes: (editingNote.intention.notes || []).map(n => 
+          n.id === editingNote.note.id ? updatedNote : n
+        )
+      };
+
+      const updatedTrip = {
+        ...editingNote.trip,
+        intentions: editingNote.trip.intentions.map(i => 
+          i.id === editingNote.intention!.id ? updatedIntention : i
+        )
+      };
+
+      const updatedHistory = tripHistory.map(t => 
+        t.id === editingNote.trip.id ? updatedTrip : t
+      );
+      
+      updateTripHistory(updatedHistory);
+    }
+
+    showToastMessage('Note updated successfully!');
+    closeNoteEditModal();
+  };
+
+  const deleteNote = () => {
+    if (!editingNote) return;
+
+    // Show confirmation dialog
+    Alert.alert(
+      'Delete Note',
+      'Are you sure you want to delete this note? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => {
+            if (editingNote.isGeneralNote) {
+              // Delete general note
+              const updatedTrip = {
+                ...editingNote.trip,
+                generalNotes: editingNote.trip.generalNotes.filter(n => n.id !== editingNote.note.id)
+              };
+              
+              const updatedHistory = tripHistory.map(t => 
+                t.id === editingNote.trip.id ? updatedTrip : t
+              );
+              
+              updateTripHistory(updatedHistory);
+            } else {
+              // Delete intention note
+              if (!editingNote.intention) return;
+              
+              const updatedIntention = {
+                ...editingNote.intention,
+                notes: (editingNote.intention.notes || []).filter(n => n.id !== editingNote.note.id)
+              };
+
+              const updatedTrip = {
+                ...editingNote.trip,
+                intentions: editingNote.trip.intentions.map(i => 
+                  i.id === editingNote.intention!.id ? updatedIntention : i
+                )
+              };
+
+              const updatedHistory = tripHistory.map(t => 
+                t.id === editingNote.trip.id ? updatedTrip : t
+              );
+              
+              updateTripHistory(updatedHistory);
+            }
+
+            showToastMessage('Note deleted successfully!');
+            closeNoteEditModal();
+          }
+        }
+      ]
+    );
+  };
+
+  const closeNoteEditModal = () => {
+    setShowNoteEditModal(false);
+    setEditingNote(null);
+    setEditingNoteHeader('');
+    setEditingNoteBody('');
+  };
+
+  // Helper function to get note display text
+  const getNoteDisplayText = (content: string) => {
+    const lines = content.split('\n');
+    const firstLine = lines[0] || '';
+    const hasMoreContent = lines.length > 1;
+    const isTitleTruncated = firstLine.length > 50;
+    
+    return {
+      displayText: isTitleTruncated ? firstLine.substring(0, 50) + '...' : firstLine,
+      hasMoreContent: hasMoreContent || isTitleTruncated,
+      fullText: content
+    };
+  };
+
+  // Initialize animation values for trips
+  useEffect(() => {
+    tripHistory.forEach(trip => {
+      if (!tripAnimations.current[trip.id]) {
+        tripAnimations.current[trip.id] = new Animated.Value(0);
+      }
+      if (!tripArrowAnimations.current[trip.id]) {
+        tripArrowAnimations.current[trip.id] = new Animated.Value(0);
+      }
+    });
+  }, [tripHistory]);
+
+  // Initialize animation values for intentions
+  useEffect(() => {
+    tripHistory.forEach(trip => {
+      trip.intentions?.forEach(intention => {
+        if (!intentionAnimations.current[intention.id]) {
+          intentionAnimations.current[intention.id] = new Animated.Value(0);
+        }
+        if (!intentionArrowAnimations.current[intention.id]) {
+          intentionArrowAnimations.current[intention.id] = new Animated.Value(0);
+        }
+      });
+    });
+  }, [tripHistory]);
+
+  // Animation functions
+  const animateTripCard = (tripId: string, isExpanding: boolean) => {
+    const animation = tripAnimations.current[tripId];
+    if (!animation) return;
+
+    Animated.timing(animation, {
+      toValue: isExpanding ? 1 : 0,
+      duration: 800,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const animateIntention = (intentionId: string, isExpanding: boolean) => {
+    const animation = intentionAnimations.current[intentionId];
+    if (!animation) return;
+
+    Animated.timing(animation, {
+      toValue: isExpanding ? 1 : 0,
+      duration: 600,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handleTripToggle = (tripId: string) => {
+    const isCurrentlyExpanded = expandedTrip === tripId;
+    const animation = tripAnimations.current[tripId];
+    const arrowAnimation = tripArrowAnimations.current[tripId];
+    
+    if (!animation || !arrowAnimation) return;
+    
+    if (isCurrentlyExpanded) {
+      // When closing, mark as animating and animate everything together
+      setAnimatingTrips(prev => ({ ...prev, [tripId]: true }));
+      Animated.parallel([
+        Animated.timing(animation, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(arrowAnimation, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        })
+      ]).start(() => {
+        // Only update state after animation completes
+        setExpandedTrip(null);
+        setAnimatingTrips(prev => ({ ...prev, [tripId]: false }));
+      });
+    } else {
+      // When opening, update state first, then animate
+      setExpandedTrip(tripId);
+      setAnimatingTrips(prev => ({ ...prev, [tripId]: true }));
+      // Small delay to ensure state is updated before animation starts
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(animation, {
+            toValue: 1,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+          }),
+          Animated.timing(arrowAnimation, {
+            toValue: 1,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+          })
+        ]).start(() => {
+          setAnimatingTrips(prev => ({ ...prev, [tripId]: false }));
+        });
+      }, 50);
+    }
+  };
+
+  const handleIntentionToggle = (intentionId: string) => {
+    const isCurrentlyExpanded = expandedIntentions.has(intentionId);
+    const animation = intentionAnimations.current[intentionId];
+    const arrowAnimation = intentionArrowAnimations.current[intentionId];
+    
+    if (!animation || !arrowAnimation) return;
+    
+    if (isCurrentlyExpanded) {
+      // When closing, mark as animating and animate everything together
+      setAnimatingIntentions(prev => ({ ...prev, [intentionId]: true }));
+      Animated.parallel([
+        Animated.timing(animation, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.timing(arrowAnimation, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: false,
+        })
+      ]).start(() => {
+        // Only update state after animation completes
+        setExpandedIntentions(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(intentionId);
+          return newSet;
+        });
+        setAnimatingIntentions(prev => ({ ...prev, [intentionId]: false }));
+      });
+    } else {
+      // When opening, update state first, then animate
+      setExpandedIntentions(prev => {
+        const newSet = new Set(prev);
+        newSet.add(intentionId);
+        return newSet;
+      });
+      setAnimatingIntentions(prev => ({ ...prev, [intentionId]: true }));
+      // Small delay to ensure state is updated before animation starts
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(animation, {
+            toValue: 1,
+            duration: 250,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+          }),
+          Animated.timing(arrowAnimation, {
+            toValue: 1,
+            duration: 250,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+          })
+        ]).start(() => {
+          setAnimatingIntentions(prev => ({ ...prev, [intentionId]: false }));
+        });
+      }, 50);
+    }
+  };
 
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString(undefined, {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
+    return new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
+      year: 'numeric'
     });
   };
 
@@ -140,6 +484,7 @@ export default function HistoryScreen() {
     // Update the current trip state with the selected trip's data
     updateTrip({
       ...tripState,
+      id: trip.id,
       startTime: trip.startTime,
       intentions: trip.intentions,
       generalNotes: trip.generalNotes,
@@ -250,7 +595,7 @@ export default function HistoryScreen() {
     };
   };
 
-  const renderRatingTimeline = (intention: Intention) => {
+  const renderRatingTimeline = (intention: Intention, trip: TripHistory) => {
     const categories = [
       { type: 'post-trip', label: 'Post' },
       { type: '7-day', label: '7d' },
@@ -258,10 +603,14 @@ export default function HistoryScreen() {
       { type: '30-day', label: '30d' }
     ];
 
+    // Get intention data from IntentionsContext
+    const intentionData = intentions.find(i => i.id === intention.id);
+    const tripData = intentionData?.trips.find(t => t.tripId === trip.id);
+
     return (
       <View style={styles.timelineContainer}>
         {categories.map((cat, index) => {
-          const rating = intention.ratings?.find(r => r.type === cat.type);
+          const rating = tripData?.ratings.find(r => r.type === cat.type);
           const value = rating?.value || 0;
           const isRated = value > 0;
 
@@ -291,245 +640,1020 @@ export default function HistoryScreen() {
     );
   };
 
+  const calculateDaysSinceTrip = (tripStartTime: Date | string, noteTime: Date | string) => {
+    const start = new Date(tripStartTime);
+    const note = new Date(noteTime);
+    
+    // Set both dates to midnight to compare calendar days
+    start.setHours(0, 0, 0, 0);
+    note.setHours(0, 0, 0, 0);
+    
+    // Calculate difference in days
+    const diffTime = note.getTime() - start.getTime();
+    const days = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    console.log('Days calculation:', {
+      tripStart: start.toISOString(),
+      noteTime: note.toISOString(),
+      diffTime,
+      days
+    });
+    return days;
+  };
+
+  const getNoteTypeLabel = (note: Note) => {
+    console.log('Getting note type label:', {
+      note,
+      type: note.type,
+      daysAfterTrip: note.daysAfterTrip
+    });
+
+    switch (note.type) {
+      case 'during':
+        return 'During trip';
+      case 'post-trip':
+        return 'Post-trip report';
+      case 'x-days':
+        return note.daysAfterTrip ? `${note.daysAfterTrip} days` : 'Follow-up';
+      case '7d':
+        return '7 days';
+      case '14d':
+        return '14 days';
+      case '30d':
+        return '30 days';
+      default:
+        return note.type;
+    }
+  };
+
+  const getNoteTypeColor = (type: Note['type']) => {
+    switch (type) {
+      case 'during':
+        return '#10B981'; // Bright green
+      case 'post-trip':
+        return '#059669'; // Darker green
+      case 'x-days':
+        return '#047857'; // Even darker green
+      case '7d':
+        return '#065F46'; // Very dark green
+      case '14d':
+        return '#064E3B'; // Darkest green
+      case '30d':
+        return '#022C22'; // Almost black green
+      default:
+        return '#6B7280';
+    }
+  };
+
+  const getNoteTypeIcon = (type: Note['type']) => {
+    switch (type) {
+      case 'post-trip':
+        return 'event-note';
+      case 'x-days':
+        return 'schedule';
+      case '7d':
+      case '14d':
+      case '30d':
+        return 'update';
+      default:
+        return 'note';
+    }
+  };
+
+  const handleAddNote = (trip: TripHistory, intention: Intention) => {
+    if (!newNote.trim()) return;
+
+    const note: Note = {
+      id: Date.now().toString(),
+      content: newNote.trim(),
+      timestamp: new Date(),
+      type: selectedNoteType,
+      daysAfterTrip: selectedNoteType === 'x-days' 
+        ? Math.floor((new Date().getTime() - new Date(trip.startTime).getTime()) / (1000 * 60 * 60 * 24))
+        : undefined
+    };
+
+    const updatedIntentions = intention.notes 
+      ? intention.notes.concat(note)
+      : [note];
+
+    const updatedTrip = {
+      ...trip,
+      intentions: trip.intentions.map(i => 
+        i.id === intention.id 
+          ? { ...i, notes: updatedIntentions }
+          : i
+      )
+    };
+
+    const updatedHistory = tripHistory.map(t => 
+      t.id === trip.id ? updatedTrip : t
+    );
+
+    updateTripHistory(updatedHistory);
+    setNewNote('');
+  };
+
+  const handleAddGeneralNote = (trip: TripHistory) => {
+    if (!newNoteHeader.trim() || !newNote.trim()) {
+      showToastMessage('Note header and content are required');
+      return;
+    }
+
+    const noteTime = new Date();
+    const daysSinceTrip = calculateDaysSinceTrip(trip.startTime, noteTime);
+    console.log('Note creation:', {
+      tripStartTime: trip.startTime,
+      noteTime,
+      daysSinceTrip,
+      tripEndTime: trip.endTime
+    });
+    
+    // Determine note type based on when the note was taken
+    let noteType: Note['type'];
+    let daysAfterTrip: number;
+
+    // If the trip is still active (hasn't ended)
+    if (!trip.endTime) {
+      noteType = 'during';
+      daysAfterTrip = 0;
+    } 
+    // If the note is from the post-trip report (taken right after trip ended)
+    else if (daysSinceTrip === 0 && new Date(noteTime).getTime() > new Date(trip.endTime).getTime()) {
+      noteType = 'post-trip';
+      daysAfterTrip = 0;
+    }
+    // Otherwise, it's a follow-up note
+    else if (daysSinceTrip >= 30) {
+      noteType = '30d';
+      daysAfterTrip = 30;
+    } else if (daysSinceTrip >= 14) {
+      noteType = '14d';
+      daysAfterTrip = 14;
+    } else if (daysSinceTrip >= 7) {
+      noteType = '7d';
+      daysAfterTrip = 7;
+    } else if (daysSinceTrip > 0) {
+      noteType = 'x-days';
+      daysAfterTrip = daysSinceTrip;
+    } else {
+      noteType = 'during';
+      daysAfterTrip = 0;
+    }
+
+    console.log('Note type determination:', {
+      noteType,
+      daysAfterTrip,
+      daysSinceTrip
+    });
+
+    const note: Note = {
+      id: Date.now().toString(),
+      content: newNoteHeader.trim() + '\n' + newNote.trim(),
+      timestamp: noteTime,
+      type: noteType,
+      daysAfterTrip
+    };
+
+    console.log('Created note:', note);
+
+    const updatedTrip = {
+      ...trip,
+      generalNotes: [...trip.generalNotes, note]
+    };
+
+    const updatedHistory = tripHistory.map(t => 
+      t.id === trip.id ? updatedTrip : t
+    );
+
+    updateTripHistory(updatedHistory);
+    setNewNote('');
+    setNewNoteHeader('');
+    
+    // Show toast message
+    showToastMessage('Note saved successfully!');
+    
+    // Set the last added note ID for highlighting
+    setLastAddedNoteId(note.id);
+    
+    // Clear the highlight after 3 seconds
+    setTimeout(() => {
+      setLastAddedNoteId(null);
+    }, 3000);
+    
+    // Close the note input modal (moved to end)
+    setShowNoteInput(false);
+    setSelectedIntention(null);
+  };
+
+  const renderNotes = (notes: Note[], tripStartTime: Date, trip: TripHistory, intention?: Intention) => {
+    // Determine which state to use based on whether this is for an intention or general notes
+    const isIntentionNotes = !!intention;
+    const intentionId = intention?.id;
+    
+    // Get the appropriate expanded state
+    const getExpandedState = (noteType: Note['type']) => {
+      if (isIntentionNotes && intentionId) {
+        return expandedIntentionNoteGroups[intentionId]?.[noteType] ?? true;
+      } else {
+        return expandedNoteGroups[noteType];
+      }
+    };
+    
+    // Set the appropriate expanded state
+    const setExpandedState = (noteType: Note['type'], expanded: boolean) => {
+      if (isIntentionNotes && intentionId) {
+        setExpandedIntentionNoteGroups(prev => ({
+          ...prev,
+          [intentionId]: {
+            ...prev[intentionId],
+            [noteType]: expanded
+          }
+        }));
+      } else {
+        setExpandedNoteGroups(prev => ({
+          ...prev,
+          [noteType]: expanded
+        }));
+      }
+    };
+
+    // Group notes by type
+    const groupedNotes = notes.reduce((acc, note) => {
+      const type = note.type;
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+      acc[type].push(note);
+      return acc;
+    }, {} as Record<Note['type'], Note[]>);
+
+    // Sort notes within each group by timestamp
+    Object.keys(groupedNotes).forEach(type => {
+      groupedNotes[type as Note['type']].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+    });
+
+    // Render each group
+    return Object.entries(groupedNotes).map(([type, typeNotes]) => {
+      const noteType = type as Note['type'];
+      const isExpanded = getExpandedState(noteType);
+      const groupKey = isIntentionNotes ? `${intentionId}-${noteType}` : `general-${trip.id}-${noteType}`;
+      
+      return (
+        <View key={groupKey} style={styles.noteGroup}>
+          <TouchableOpacity
+            style={styles.noteGroupHeader}
+            onPress={() => {
+              setExpandedState(noteType, !isExpanded);
+            }}
+          >
+            <View style={[styles.noteTypeIndicator, { borderColor: getNoteTypeColor(noteType) }]}>
+              <Text style={[styles.noteTypeText, { color: getNoteTypeColor(noteType) }]}>
+                {getNoteTypeLabel({ 
+                  id: '', 
+                  content: '', 
+                  timestamp: new Date(), 
+                  type: noteType,
+                  daysAfterTrip: typeNotes[0]?.daysAfterTrip
+                })}
+              </Text>
+            </View>
+            <MaterialIcons
+              name={isExpanded ? 'expand-less' : 'expand-more'}
+              size={20}
+              color={Colors.text.secondary}
+            />
+          </TouchableOpacity>
+          {isExpanded && typeNotes.map(note => {
+            const noteDisplay = getNoteDisplayText(note.content);
+            const isGeneralNote = !isIntentionNotes;
+            
+            return (
+              <TouchableOpacity
+                key={note.id} 
+                style={styles.noteItem}
+              >
+                <View style={styles.noteContent}>
+                  <View style={styles.noteHeaderRow}>
+                    <Text style={styles.noteText}>{noteDisplay.displayText}</Text>
+                    <View style={styles.noteActions}>
+                      {noteDisplay.hasMoreContent && (
+                        <MaterialIcons 
+                          name="expand-more" 
+                          size={16} 
+                          color={Colors.text.secondary} 
+                          style={styles.expandIcon}
+                        />
+                      )}
+                      <TouchableOpacity
+                        style={styles.noteActionButton}
+                        onPress={() => openNoteEditModal(note, trip, intention, isGeneralNote)}
+                      >
+                        <MaterialIcons name="edit" size={16} color={Colors.text.secondary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <Text style={styles.noteTime}>
+                    {formatTime(note.timestamp)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+    });
+  };
+
   const renderTripCard = (trip: TripHistory) => {
     const isExpanded = expandedTrip === trip.id;
     const hasIntentions = trip.intentions && trip.intentions.length > 0;
-    const hasRatings = trip.intentions.some(intention => 
-      intention.ratings && intention.ratings.some(rating => rating.value !== null)
-    );
-    const ratingData = getRatingData(trip);
 
     return (
-      <View style={styles.tripCard}>
+      <CardContainer style={styles.tripCard}>
         <TouchableOpacity
           style={styles.tripHeader}
-          onPress={() => setExpandedTrip(isExpanded ? null : trip.id)}
+          onPress={() => handleTripToggle(trip.id)}
         >
           <View style={styles.tripHeaderContent}>
-            <Text style={styles.tripTitle}>
+            <Heading variant="h3" style={styles.tripTitle}>
               {trip.dose?.name || `Trip on ${new Date(trip.startTime).toLocaleDateString()}`}
-            </Text>
+            </Heading>
             <View>
-              <Text style={styles.tripDate}>
+              <Caption style={styles.tripDate}>
                 {new Date(trip.startTime).toLocaleDateString()}
-              </Text>
-              <Text style={styles.tripTime}>
+              </Caption>
+              <Caption style={styles.tripTime}>
                 {new Date(trip.startTime).toLocaleTimeString([], { 
                   hour: '2-digit', 
                   minute: '2-digit' 
                 })}
-              </Text>
+              </Caption>
             </View>
           </View>
-          <MaterialIcons
-            name={isExpanded ? 'expand-less' : 'expand-more'}
-            size={24}
-            color="#666"
-          />
+          <Animated.View
+            style={{
+              transform: [{
+                rotate: tripArrowAnimations.current[trip.id]?.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '180deg'],
+                }) || '0deg'
+              }]
+            }}
+          >
+            <MaterialIcons
+              name={isExpanded ? 'expand-less' : 'expand-more'}
+              size={20}
+              color={Colors.text.secondary}
+            />
+          </Animated.View>
         </TouchableOpacity>
 
-        {isExpanded && (
-          <View style={styles.tripContent}>
+        {(isExpanded || animatingTrips[trip.id]) && (
+          <Animated.View 
+            style={[
+              styles.tripContent,
+              {
+                opacity: tripAnimations.current[trip.id] || 0,
+                transform: [{
+                  translateY: tripAnimations.current[trip.id]?.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0],
+                  }) || -20
+                }],
+              }
+            ]}
+          >
             {/* Rate Now Button for unrated trips with intentions */}
             {!trip.postTripRated && trip.intentions && trip.intentions.length > 0 && (
               <View style={styles.rateNowContainer}>
-                <TouchableOpacity
-                  style={styles.rateNowButton}
+                <Button
+                  title="Rate Now"
+                  variant="primary"
                   onPress={() => handleRateTrip(trip)}
-                >
-                  <MaterialIcons name="star" size={20} color="#FFFFFF" />
-                  <Text style={styles.rateNowButtonText}>Rate Now</Text>
-                </TouchableOpacity>
+                  style={styles.rateNowButton}
+                  icon={<MaterialIcons name="star" size={20} color={Colors.text.inverse} />}
+                />
               </View>
             )}
 
-            {/* Dose Information */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Dose Information</Text>
-              <View style={styles.doseInfo}>
-                <Text style={styles.doseText}>
-                  {trip.dose ? `${trip.dose.name} (${trip.dose.range})` : 'No dose recorded'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Intentions */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {trip.intentions.length === 1 ? 'Intention' : 'Intentions'}
-              </Text>
-              {trip.intentions.map(intention => (
-                <View key={intention.id} style={styles.intentionCard}>
-                  <View style={styles.intentionHeader}>
-                    <View style={styles.intentionHeaderContent}>
-                      <View style={styles.intentionTitleContainer}>
-                        <Text style={styles.intentionText}>{intention.text}</Text>
-                        {intention.description && (
-                          <Text style={styles.intentionDescription}>
-                            {intention.description}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={styles.intentionRightContent}>
-                      {renderRatingTimeline(intention)}
-                      <TouchableOpacity
-                        onPress={() => setExpandedIntention(
-                          expandedIntention === intention.id ? null : intention.id
-                        )}
-                      >
-                        <MaterialIcons
-                          name={expandedIntention === intention.id ? 'expand-less' : 'expand-more'}
-                          size={24}
-                          color="#666"
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {expandedIntention === intention.id && (
-                    <View style={styles.intentionContent}>
-                      {/* Rating Progress Chart */}
-                      {getIntentionRatingData(intention) && (
-                        <View style={styles.ratingChartContainer}>
-                          <Text style={styles.ratingChartTitle}>Rating Progress</Text>
-                          <View style={styles.chartWrapper}>
-                            <LineChart
-                              data={getIntentionRatingData(intention)!}
-                              width={SCREEN_WIDTH - 112}
-                              height={180}
-                              chartConfig={{
-                                backgroundColor: '#ffffff',
-                                backgroundGradientFrom: '#ffffff',
-                                backgroundGradientTo: '#ffffff',
-                                decimalPlaces: 0,
-                                color: (opacity = 1) => `rgba(81, 150, 244, ${opacity})`,
-                                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                                style: {
-                                  borderRadius: 16
-                                },
-                                propsForDots: {
-                                  r: '0',
-                                  strokeWidth: '0',
-                                  stroke: 'transparent'
-                                },
-                                propsForBackgroundLines: {
-                                  strokeDasharray: '',
-                                  stroke: '#E5E7EB',
-                                  strokeWidth: 1
-                                },
-                                propsForLabels: {
-                                  fontSize: 12
-                                }
-                              }}
-                              bezier
-                              style={styles.chart}
-                              segments={4}
-                              fromZero={true}
-                              yAxisInterval={1}
-                              yAxisSuffix=""
-                              yAxisLabel=""
-                              renderDotContent={({ x, y, index }) => {
-                                const value = getIntentionRatingData(intention)!.datasets[0].data[index];
-                                if (value === 0) {
-                                  return (
-                                    <View
-                                      style={[
-                                        styles.dotLabel,
-                                        {
-                                          left: x - 10,
-                                          top: y - 20,
-                                          backgroundColor: '#E5E7EB'
-                                        }
-                                      ]}
-                                    >
-                                      <Text style={styles.dotLabelText}>-</Text>
-                                    </View>
-                                  );
-                                }
-                                return (
-                                  <View
-                                    style={[
-                                      styles.dotLabel,
-                                      {
-                                        left: x - 10,
-                                        top: y - 20
-                                      }
-                                    ]}
-                                  >
-                                    <Text style={styles.dotLabelText}>{value}</Text>
-                                  </View>
-                                );
-                              }}
-                            />
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Follow-up Rating Buttons */}
-                      <View style={styles.followUpSection}>
-                        <Text style={styles.followUpTitle}>Integration Follow-ups</Text>
-                        <View style={styles.followUpButtons}>
-                          {getFollowUpButton('7-day', intention, trip)}
-                          {getFollowUpButton('14-day', intention, trip)}
-                          {getFollowUpButton('30-day', intention, trip)}
-                        </View>
-                      </View>
-
-                      {/* Notes */}
-                      {intention.notes && intention.notes.length > 0 && (
-                        <View style={styles.notesContainer}>
-                          <Text style={styles.notesTitle}>Notes</Text>
-                          {intention.notes.map((note, index) => (
-                            <View key={index} style={styles.noteItem}>
-                              <Text style={styles.noteText}>{note.content}</Text>
-                              <Text style={styles.noteTime}>
-                                {formatTime(note.timestamp)}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </View>
-              ))}
-            </View>
-
-            {/* General Notes */}
-            {trip.generalNotes && trip.generalNotes.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>General Notes</Text>
-                <View style={styles.generalNotesContainer}>
-                  {trip.generalNotes.map((note: Note) => (
-                    <View key={note.id} style={styles.noteItem}>
-                      <Text style={styles.noteText}>{note.content}</Text>
-                      <Text style={styles.noteTime}>
-                        {formatTime(note.timestamp)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
+            {/* Intentions Section */}
+            {hasIntentions && (
+              <View style={styles.intentionsSection}>
+                <Heading variant="h4" style={styles.sectionTitle}>Intentions</Heading>
+                {trip.intentions.map(intention => renderIntention(intention, trip))}
               </View>
             )}
-          </View>
+
+            {/* General Notes Section */}
+            <View style={styles.generalNotesSection}>
+              <View style={styles.notesHeader}>
+                <Heading variant="h4" style={styles.notesTitle}>General Notes</Heading>
+                <Button
+                  title="Add Note"
+                  variant="primary"
+                  size="small"
+                  onPress={() => {
+                    setNewNote('');
+                    setSelectedIntention(null);
+                    setShowNoteInput(true);
+                  }}
+                  style={styles.addNoteButton}
+                  icon={<MaterialIcons name="add" size={20} color={Colors.text.inverse} />}
+                />
+              </View>
+              {/* Existing Notes */}
+              {renderNotes(trip.generalNotes || [], trip.startTime, trip)}
+            </View>
+
+            <View style={{ alignItems: 'center', marginTop: 16 }}>
+              <TouchableOpacity
+                onPress={() => handleDeleteTrip(trip.id)}
+                style={{
+                  backgroundColor: '#EF4444',
+                  paddingVertical: 6,
+                  paddingHorizontal: 18,
+                  borderRadius: 16,
+                  marginTop: 8,
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Delete Trip</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
         )}
-      </View>
+      </CardContainer>
+    );
+  };
+
+  const renderIntention = (intention: Intention, trip: TripHistory) => {
+    const isExpanded = expandedIntentions.has(intention.id);
+    const ratingTypes = ['post-trip', '7-day', '14-day', '30-day'];
+
+    // Get intention data from IntentionsContext for ratings
+    const intentionData = intentions.find(i => i.id === intention.id);
+    const tripData = intentionData?.trips.find(t => t.tripId === trip.id);
+
+    // Get notes from the trip history (intention.notes) instead of IntentionsContext
+    const intentionNotes = intention.notes || [];
+
+    const ratingData = {
+      labels: ['Post-trip', '7-day', '14-day', '30-day'],
+      datasets: [{
+        data: [
+          tripData?.ratings.find(r => r.type === 'post-trip')?.value || 0,
+          tripData?.ratings.find(r => r.type === '7-day')?.value || 0,
+          tripData?.ratings.find(r => r.type === '14-day')?.value || 0,
+          tripData?.ratings.find(r => r.type === '30-day')?.value || 0,
+        ],
+        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+        strokeWidth: 2,
+      }],
+    };
+
+    return (
+      <CardContainer key={intention.id} style={styles.intentionCard}>
+        <TouchableOpacity
+          style={styles.intentionHeader}
+          onPress={() => handleIntentionToggle(intention.id)}
+        >
+          <View style={styles.intentionTitleContainer}>
+            <Text style={styles.intentionText}>
+              {intention.text}
+            </Text>
+          </View>
+          <View style={styles.ratingCircles}>
+            {ratingTypes.map((type) => {
+              const rating = tripData?.ratings.find(r => r.type === type);
+              const isRated = rating?.value !== null && rating?.value !== undefined;
+              return (
+                <View key={type} style={[
+                  styles.ratingCircle,
+                  isRated ? styles.ratedCircle : styles.unratedCircle
+                ]}>
+                  <Text style={[
+                    styles.ratingCircleText,
+                    isRated ? styles.ratedText : styles.unratedText
+                  ]}>
+                    {isRated ? rating.value : '-'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <Animated.View
+            style={{
+              transform: [{
+                rotate: intentionArrowAnimations.current[intention.id]?.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '180deg'],
+                }) || '0deg'
+              }]
+            }}
+          >
+            <MaterialIcons
+              name={isExpanded ? 'expand-less' : 'expand-more'}
+              size={20}
+              color={Colors.text.secondary}
+            />
+          </Animated.View>
+        </TouchableOpacity>
+
+        <Animated.View 
+          style={[
+            styles.intentionContent,
+            {
+              opacity: intentionAnimations.current[intention.id] || 0,
+              transform: [{
+                translateY: intentionAnimations.current[intention.id]?.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-20, 0],
+                }) || -20
+              }],
+            }
+          ]}
+        >
+          {(isExpanded || animatingIntentions[intention.id]) && (
+            <>
+              {/* Notes */}
+              {intentionNotes.length > 0 && (
+                <View style={styles.notesContainer}>
+                  <Label weight="semibold" style={styles.notesTitle}>
+                    Notes
+                  </Label>
+                  {intentionNotes.map((note: any) => {
+                    const noteDisplay = getNoteDisplayText(note.content);
+                    
+                    return (
+                      <TouchableOpacity
+                        key={note.id} 
+                        style={styles.noteItem}
+                      >
+                        <View style={styles.noteContent}>
+                          <Caption style={styles.noteType}>
+                            {note.type === 'during' ? 'During Trip' : 
+                             note.type === 'post-trip' ? 'Post Trip' : 'Follow-up'}
+                          </Caption>
+                          <View style={styles.noteHeaderRow}>
+                            <BodyText variant="small">{noteDisplay.displayText}</BodyText>
+                            <View style={styles.noteActions}>
+                              {noteDisplay.hasMoreContent && (
+                                <MaterialIcons 
+                                  name="expand-more" 
+                                  size={16} 
+                                  color={Colors.text.secondary} 
+                                  style={styles.expandIcon}
+                                />
+                              )}
+                              <TouchableOpacity
+                                style={styles.noteActionButton}
+                                onPress={() => openNoteEditModal(note, trip, intention, false)}
+                              >
+                                <MaterialIcons name="edit" size={16} color={Colors.text.secondary} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                          <Caption style={styles.noteTimestamp}>
+                            {formatDate(note.timestamp)}
+                          </Caption>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* No content message */}
+              {intentionNotes.length === 0 && 
+               (!tripData?.ratings || tripData.ratings.length === 0) && (
+                <View style={styles.noContentContainer}>
+                  <Caption style={styles.noContentText}>
+                    No notes or ratings for this intention in this trip
+                  </Caption>
+                </View>
+              )}
+            </>
+          )}
+        </Animated.View>
+      </CardContainer>
+    );
+  };
+
+  const handleAddIntentionNote = (intention: Intention, trip: TripHistory) => {
+    if (!newNoteHeader.trim() || !newNote.trim()) {
+      showToastMessage('Note header and content are required');
+      return;
+    }
+
+    const noteTime = new Date();
+    const daysSinceTrip = calculateDaysSinceTrip(trip.startTime, noteTime);
+    
+    // Determine note type based on when the note was taken
+    let noteType: Note['type'];
+    let daysAfterTrip: number;
+
+    // If the trip is still active (hasn't ended)
+    if (!trip.endTime) {
+      noteType = 'during';
+      daysAfterTrip = 0;
+    } 
+    // If the note is from the post-trip report (taken right after trip ended)
+    else if (daysSinceTrip === 0 && new Date(noteTime).getTime() > new Date(trip.endTime).getTime()) {
+      noteType = 'post-trip';
+      daysAfterTrip = 0;
+    }
+    // Otherwise, it's a follow-up note
+    else if (daysSinceTrip >= 30) {
+      noteType = '30d';
+      daysAfterTrip = 30;
+    } else if (daysSinceTrip >= 14) {
+      noteType = '14d';
+      daysAfterTrip = 14;
+    } else if (daysSinceTrip >= 7) {
+      noteType = '7d';
+      daysAfterTrip = 7;
+    } else if (daysSinceTrip > 0) {
+      noteType = 'x-days';
+      daysAfterTrip = daysSinceTrip;
+    } else {
+      noteType = 'during';
+      daysAfterTrip = 0;
+    }
+
+    const note: Note = {
+      id: Date.now().toString(),
+      content: newNoteHeader.trim() + '\n' + newNote.trim(),
+      timestamp: noteTime,
+      type: noteType,
+      daysAfterTrip
+    };
+
+    const updatedIntention = {
+      ...intention,
+      notes: [...(intention.notes || []), note]
+    };
+
+    const updatedTrip = {
+      ...trip,
+      intentions: trip.intentions.map(i => 
+        i.id === intention.id ? updatedIntention : i
+      )
+    };
+
+    const updatedHistory = tripHistory.map(t => 
+      t.id === trip.id ? updatedTrip : t
+    );
+
+    updateTripHistory(updatedHistory);
+    setNewNote('');
+    setNewNoteHeader('');
+    
+    // Show toast message
+    showToastMessage('Note saved successfully!');
+    
+    // Set the last added note ID for highlighting
+    setLastAddedNoteId(note.id);
+    
+    // Clear the highlight after 3 seconds
+    setTimeout(() => {
+      setLastAddedNoteId(null);
+    }, 3000);
+    
+    // Close the note input modal (moved to end)
+    setShowNoteInput(false);
+    setSelectedIntention(null);
+  };
+
+  const handleDeleteTrip = (tripId: string) => {
+    Alert.alert(
+      'Delete Trip',
+      'Are you sure you want to delete this trip? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Confirm Deletion',
+              'This is your last chance. Do you really want to permanently delete this trip?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete Forever',
+                  style: 'destructive',
+                  onPress: () => {
+                    const updatedHistory = tripHistory.filter(t => t.id !== tripId);
+                    updateTripHistory(updatedHistory);
+                    setExpandedTrip(null);
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
     );
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Trip History</Text>
-      </View>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {tripHistory.map((trip) => renderTripCard(trip))}
-      </ScrollView>
+        <View style={styles.header}>
+          <Text style={styles.title}>Trip History</Text>
+        </View>
+        
+        <ScrollView 
+          style={{ 
+            padding: Spacing.lg, 
+            paddingBottom: 40, 
+            flexGrow: 1 
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {tripHistory.map((trip) => renderTripCard(trip))}
+        </ScrollView>
+
+        {/* Toast Message */}
+        {showToast && (
+          <Animated.View
+            style={[
+              styles.toast,
+              {
+                opacity: toastOpacity,
+                transform: [{ translateY: toastTranslateY }],
+                top: '40%',
+                left: '10%',
+                right: '10%',
+                alignSelf: 'center',
+              },
+            ]}
+          >
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </Animated.View>
+        )}
+
+        {/* Note Input Modal */}
+        {showNoteInput && (
+          <Modal
+            visible={showNoteInput}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => {
+              setShowNoteInput(false);
+              setSelectedIntention(null);
+              setNewNote('');
+              setNewNoteHeader('');
+              Keyboard.dismiss();
+            }}
+          >
+            <KeyboardAvoidingView 
+              style={styles.modalOverlay}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? -200 : -100}
+            >
+              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={styles.modalOverlay}>
+                  <TouchableWithoutFeedback onPress={() => {}}>
+                    <View style={styles.modalContent}>
+                      <View style={styles.modalHeader}>
+                        <BodyText variant="base" style={{ fontWeight: '600' }}>
+                          {selectedIntention ? 'Add Note to Intention' : 'Add Note'}
+                        </BodyText>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setShowNoteInput(false);
+                            setSelectedIntention(null);
+                            setNewNote('');
+                            setNewNoteHeader('');
+                            Keyboard.dismiss();
+                          }}
+                        >
+                          <MaterialIcons name="close" size={24} color={Colors.text.secondary} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <View style={styles.noteEditForm}>
+                        <View style={styles.noteEditField}>
+                          <Label weight="semibold" style={styles.noteEditLabel}>
+                            Title
+                          </Label>
+                          <TextInput
+                            style={styles.noteEditInput}
+                            value={newNoteHeader}
+                            onChangeText={setNewNoteHeader}
+                            placeholder="Note title (max 100 characters)..."
+                            multiline={false}
+                            maxLength={100}
+                            returnKeyType="next"
+                            blurOnSubmit={false}
+                            ref={titleInputRef}
+                            onSubmitEditing={() => {
+                              notesInputRef.current?.focus();
+                            }}
+                          />
+                          <Caption style={styles.characterCount}>
+                            {newNoteHeader.length}/100
+                          </Caption>
+                        </View>
+                        
+                        <View style={styles.noteEditField}>
+                          <Label weight="semibold" style={styles.noteEditLabel}>
+                            Notes
+                          </Label>
+                          <TextInput
+                            style={[styles.noteEditInput, styles.noteEditTextArea]}
+                            value={newNote}
+                            onChangeText={setNewNote}
+                            placeholder="Write your note here..."
+                            multiline={true}
+                            textAlignVertical="top"
+                            returnKeyType="done"
+                            blurOnSubmit={true}
+                            onSubmitEditing={() => {
+                              Keyboard.dismiss();
+                            }}
+                            ref={notesInputRef}
+                          />
+                        </View>
+                      </View>
+                      
+                      <View style={styles.modalActions}>
+                        <Button
+                          title="Delete"
+                          variant="primary"
+                          onPress={deleteNote}
+                          style={{ flex: 1, marginRight: 8, backgroundColor: '#EF4444' }}
+                          textStyle={{ color: '#FFFFFF', fontSize: 14 }}
+                        />
+                        <Button
+                          title="Cancel"
+                          variant="outline"
+                          onPress={() => {
+                            Alert.alert(
+                              'Cancel Edit',
+                              'Are you sure you want to cancel? Any unsaved changes will be lost.',
+                              [
+                                { text: 'Keep Editing', style: 'cancel' },
+                                { 
+                                  text: 'Cancel', 
+                                  style: 'destructive',
+                                  onPress: closeNoteEditModal
+                                }
+                              ]
+                            );
+                          }}
+                          style={{ flex: 1, marginRight: 8 }}
+                          textStyle={{ fontSize: 14 }}
+                        />
+                        <Button
+                          title="Save"
+                          variant="primary"
+                          onPress={() => {
+                            if (selectedIntention) {
+                              handleAddIntentionNote(selectedIntention, tripHistory.find(t => 
+                                t.intentions.some(i => i.id === selectedIntention.id)
+                              )!);
+                            } else {
+                              handleAddGeneralNote(tripHistory.find(t => 
+                                t.id === expandedTrip
+                              )!);
+                            }
+                            Keyboard.dismiss();
+                          }}
+                          style={{ flex: 1 }}
+                          textStyle={{ fontSize: 14 }}
+                        />
+                      </View>
+                    </View>
+                  </TouchableWithoutFeedback>
+                </View>
+              </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+          </Modal>
+        )}
+
+        {/* Note Edit Modal */}
+        {showNoteEditModal && editingNote && (
+          <Modal
+            visible={showNoteEditModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={closeNoteEditModal}
+          >
+            <KeyboardAvoidingView 
+              style={styles.modalOverlay}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? -200 : -100}
+            >
+              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={styles.modalOverlay}>
+                  <TouchableWithoutFeedback onPress={() => {}}>
+                    <View style={styles.noteEditModalContent}>
+                      <View style={styles.modalHeader}>
+                        <BodyText variant="base" style={{ fontWeight: '600' }}>
+                          Edit Note
+                        </BodyText>
+                        <TouchableOpacity onPress={closeNoteEditModal}>
+                          <MaterialIcons name="close" size={24} color={Colors.text.secondary} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <View style={styles.noteEditForm}>
+                        <View style={styles.noteEditField}>
+                          <Label weight="semibold" style={styles.noteEditLabel}>
+                            Title
+                          </Label>
+                          <TextInput
+                            style={styles.noteEditInput}
+                            value={editingNoteHeader}
+                            onChangeText={setEditingNoteHeader}
+                            placeholder="Note title (max 100 characters)..."
+                            multiline={false}
+                            maxLength={100}
+                            returnKeyType="next"
+                            blurOnSubmit={false}
+                            ref={editTitleInputRef}
+                            onSubmitEditing={() => {
+                              editNotesInputRef.current?.focus();
+                            }}
+                          />
+                          <Caption style={styles.characterCount}>
+                            {editingNoteHeader.length}/100
+                          </Caption>
+                        </View>
+                        
+                        <View style={styles.noteEditField}>
+                          <Label weight="semibold" style={styles.noteEditLabel}>
+                            Notes
+                          </Label>
+                          <TextInput
+                            style={[styles.noteEditInput, styles.noteEditTextArea]}
+                            value={editingNoteBody}
+                            onChangeText={setEditingNoteBody}
+                            placeholder="Write your note here..."
+                            multiline={true}
+                            textAlignVertical="top"
+                            returnKeyType="done"
+                            blurOnSubmit={true}
+                            onSubmitEditing={() => {
+                              Keyboard.dismiss();
+                            }}
+                            ref={editNotesInputRef}
+                          />
+                        </View>
+                      </View>
+                      
+                      <View style={styles.modalActions}>
+                        <Button
+                          title="Delete"
+                          variant="primary"
+                          onPress={deleteNote}
+                          style={{ flex: 1, marginRight: 8, backgroundColor: '#EF4444' }}
+                          textStyle={{ color: '#FFFFFF', fontSize: 14 }}
+                        />
+                        <Button
+                          title="Cancel"
+                          variant="outline"
+                          onPress={() => {
+                            Alert.alert(
+                              'Cancel Edit',
+                              'Are you sure you want to cancel? Any unsaved changes will be lost.',
+                              [
+                                { text: 'Keep Editing', style: 'cancel' },
+                                { 
+                                  text: 'Cancel', 
+                                  style: 'destructive',
+                                  onPress: closeNoteEditModal
+                                }
+                              ]
+                            );
+                          }}
+                          style={{ flex: 1, marginRight: 8 }}
+                          textStyle={{ fontSize: 14 }}
+                        />
+                        <Button
+                          title="Save"
+                          variant="primary"
+                          onPress={saveNoteEdit}
+                          style={{ flex: 1 }}
+                          textStyle={{ fontSize: 14 }}
+                        />
+                      </View>
+                    </View>
+                  </TouchableWithoutFeedback>
+                </View>
+              </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+          </Modal>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -623,8 +1747,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 16,
-    overflow: 'hidden',
   },
   intentionHeader: {
     flexDirection: 'row',
@@ -638,10 +1760,11 @@ const styles = StyleSheet.create({
   intentionHeaderContent: {
     flexDirection: 'row',
     flex: 1,
+    alignItems: 'center',
   },
   intentionTitleContainer: {
     flex: 1,
-    marginLeft: 12,
+    marginRight: 8,
   },
   intentionText: {
     fontSize: 16,
@@ -650,6 +1773,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   intentionDescription: {
+    marginBottom: 16,
+  },
+  intentionDescriptionText: {
     fontSize: 14,
     color: '#4B5563',
     lineHeight: 20,
@@ -730,17 +1856,47 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginBottom: 12,
   },
-  noteItem: {
+  noteGroup: {
     marginBottom: 12,
   },
+  noteGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  noteTypeIndicator: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  noteTypeText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  noteItem: {
+    marginBottom: 8,
+  },
+  noteContent: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 12,
+  },
   noteText: {
-    fontSize: 14,
-    color: '#1F2937',
+    fontSize: 16,
+    color: '#111827',
     marginBottom: 4,
   },
   noteTime: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  collapsibleNote: {
+    color: '#4B5563',
+    backgroundColor: '#F3F4F6',
   },
   emptyState: {
     flex: 1,
@@ -843,5 +1999,351 @@ const styles = StyleSheet.create({
   },
   timelineLineInactive: {
     backgroundColor: '#E5E7EB',
+  },
+  noteTypeSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  noteTypeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: '#fff',
+  },
+  noteTypeButtonSelected: {
+    backgroundColor: '#F3F4F6',
+  },
+  noteTypeButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  noteTypeButtonTextSelected: {
+    fontWeight: '600',
+  },
+  noteInputContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  noteInput: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 40,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  addNoteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#3B82F6',
+  },
+  addNoteButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  addNoteText: {
+    marginLeft: 4,
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  notesSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  intentionsSection: {
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  ratingGraph: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  intentionNotes: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  intentionCheckbox: {
+    marginRight: 8,
+  },
+  completedIntentionTitle: {
+    textDecorationLine: 'line-through',
+  },
+  intentionDetails: {
+    padding: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  intentionTimeline: {
+    marginBottom: 16,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  daysLeft: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  pastDaysLeft: {
+    color: '#EF4444',
+  },
+  timelineContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timelineBar: {
+    flex: 1,
+    height: 12,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 6,
+    marginHorizontal: 8,
+  },
+  timelineProgress: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 6,
+  },
+  timelineDates: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  timelineDate: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    width: '80%',
+    maxHeight: '60%',
+    marginTop: 100,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  modalButton: {
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  cancelButton: {
+    backgroundColor: '#EF4444',
+  },
+  cancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#3B82F6',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  ratingCircles: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
+  ratingCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  ratingCircleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  ratedCircle: {
+    backgroundColor: '#3B82F6',
+  },
+  unratedCircle: {
+    backgroundColor: '#E5E7EB',
+  },
+  ratedText: {
+    color: '#FFFFFF',
+  },
+  unratedText: {
+    color: '#6B7280',
+  },
+  reusedBadge: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+  },
+  tag: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  noContentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  noContentText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  noteType: {
+    color: Colors.primary[500],
+    fontWeight: '500',
+  },
+  noteTimestamp: {
+    color: Colors.text.tertiary,
+  },
+  toast: {
+    position: 'absolute',
+    backgroundColor: '#10B981',
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  highlightedNote: {
+    backgroundColor: '#E5E7EB',
+  },
+  generalNotesSection: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  noteHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  expandIcon: {
+    marginLeft: 4,
+  },
+  noteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
+  },
+  noteActionButton: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    marginLeft: 8,
+  },
+  noteEditModalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    width: '80%',
+    maxHeight: '60%',
+    marginTop: 100,
+  },
+  noteEditForm: {
+    marginBottom: 16,
+  },
+  noteEditField: {
+    marginBottom: 8,
+  },
+  noteEditLabel: {
+    marginBottom: 4,
+  },
+  noteEditInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  noteEditTextArea: {
+    height: 120,
+    textAlignVertical: 'top',
+  },
+  characterCount: {
+    alignSelf: 'flex-end',
+    fontSize: 12,
+    color: '#6B7280',
   },
 }); 

@@ -1,0 +1,181 @@
+// Next Steps/TDL //
+   
+General Trip Notes/Follow up Reports Revamp 
+
+
+    cannot save new trip sitter in pre trip screen 
+        - would you like to save this trip sitter to a default? prompt
+    remove the gray pop up after typing in dose 
+
+    all notes should collapse when card is closed 
+
+    save and cancel button showuld be greyedd out and then blue after typing for notes (logic for save and cancel)
+
+
+
+// MAPS Intentions Guidebook//
+
+
+
+// Existing beef up // 
+    UI/UX Polish: Refine layouts, spacing, colors, and interactions for clarity and delight.
+    Validation & Error Handling: Make sure all forms and flows handle errors gracefully.
+    Edge Cases: Test and fix any odd behaviors (e.g., empty states, long text, etc.).
+    Performance: Optimize any slow screens or heavy operations.
+    Accessibility: Improve text contrast, button sizes, and add accessibility labels.
+    Persistence & Data Integrity: Ensure all data is saved/retrieved correctly, even after app restarts.
+    User Feedback: Add subtle animations, confirmations, or toasts for actions.
+    Documentation: Add comments or docs for tricky parts of the code.
+
+// general //
+    fit everything to screen 
+    UI + simple animations + app feel 
+    Add quick trip 
+    Dark/Light Mode
+    More substances
+    ui is incosisstent across main pages
+    errors 
+        - each child list unique key 
+        - error every time
+    ensure user cannot go backwards 
+
+
+
+
+// hsitory //
+    increase tag size and decrease note title size 
+    edit button overflow on long titles, add ellipses to prevent his
+    when saving note, should exit screen and be obvious that note has ben saved
+    fix graph ui 
+    animation when opening inention drop down
+    more advanced view that covers entire screen for each trip card 
+    new trips should be at top not bottom 
+    titel for each trip on trip hsitory should be the titel andn small time on the side 
+    add notes 
+    add notes during each intention follow up rating 
+    add notes to follow up intention on any date
+     group ntoes for each intention by color/durring trip (which hourr of trip) -- after-trip -- or x days after the notes written 
+   filters for intentions page and filters for trips
+    add minimalk scren mode durign active trip screen (removes most everything, only showin time)
+    create clear frame and collapsible for intention grahp 
+    need upcoming intention rating screens 
+    make hsitory tab have borders/frame around all information with colors + 'trip cx days ago' info+ frame 
+    graph does not fit the frame
+    sortable by categories (filters) 
+    Compatibilty with health app to calculate
+        Total walk time during trip 
+        distance covered 
+        energy, etc
+        apple watch integration for greater insights ()
+    Stats
+        trips over x period of time (3 months, 6month, 1year)
+        Total grams/ug taken in last x time
+        Trips taken in 
+
+
+
+// Intentions tab //
+    own screen for upcoming Intentions ratings 
+    up down arrows for past intentions that are currently integrating (raitng hsitorry )
+    show past intentoins 
+    integration or cross-trip inttenions 
+        - can select intetion form dropdown menu of prior intentions 
+    organzie itnetnoins by category   
+
+// active trip screen //
+    fix screen (too high) 
+    add tool bar for all options 
+        viewexisting intentions 
+        add intention 
+        view plan/backup plan 
+    add minimalk screen mode button durign active trip screen (removes most everything, only showin time)
+    fix textbox it sucks 
+    settings (toggle features)   
+    add intention mid-trip
+    ai voice assistant so no tech is needed for user
+    more optionality for delineaating phases (end phase early/continue phase later)
+    backup plan button/dropdown 
+    No intentions set screen way too high (off screen)
+    rate your intentions screen way too high (off screen)
+    Overall further improvements  -- the importance of the active trip screen 
+
+
+
+// pre-trip screen//
+    add quotes 
+    safety check ui is differnet from each other page
+    Add backup plan note option which cnan be accessed by a button on teh activ trip screen
+    make name of the trip in 
+        pre
+        post trip screen
+        +   during the active trip scren 
+    Settings in pre trip screen (toggle other features on active trip screen)
+            black out safety features (double confirmation for them setting option)
+
+
+
+// home //
+    visual graph on home screen of how intentiosn ahve been ddoing
+    view hisotryy does not link ot hisotry (add animation)
+    recent trip should be displaeyeyd showing trips within the last 'x' days
+    quick trip add option (type in)
+    add animation to wavy bacgkround
+
+
+    // Social Media Tab Add (entire new feature adding social media aspect to the app) //
+    - Share trips 
+    - share trip Stats
+    - share just an integration 
+    - traditional posts
+    - find trippers in your area 
+
+
+// Notes that need integrating/organizing //
+
+full catch up of everything have done so far
+roadmap for the future — cleaning up: notesandthings + cursor notes + iosnotes to create complete roadmap
+Roadmap 
+- Fix the UI (Implement TwitterSaved steps)
+    - Systematic overhaul of existing + future UI using the outlined plan
+
+UI Steps:
+List all component types 
+List all pages
+Color pallete/backgrounds/Fonts
+Logos/Special Components 
+Future Ui Considerations — All future screens + designs 
+
+1. Build All Components
+2. Page by Page Integration with Components
+    1. Ensuring all logic is maintained 
+
+Only one intention, screen should remove the s on history screen
+gotta tackle ui before it’s too late 
+- ui for the base of our entire app (build up only after)
+- create own components 
+
+music feature 
+
+maps psychedelic integration workbook
+social aspect
+revise long term features/plans
+
+before your trip 
+- toggle list 
+- fruits vegetables meditation, exercise, intentions, etc
+
+AI voice integration for notes 
+
+Tabs on each trip card 
+- notes
+- info
+
+
+start trip prompt (new final screen)
+- slide button
+
+rating precision for ratings
+
+tabs for each trip card with seperate info 
+
+radar chart for each trip (mapping intentions of each trip, minimum intention amount to enable)

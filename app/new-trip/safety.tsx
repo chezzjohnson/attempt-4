@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTrip } from '../../contexts/TripContext';
 import { TripSitter, useTripSitter } from '../../contexts/TripSitterContext';
@@ -39,7 +39,7 @@ const validatePhoneNumber = (phone: string): boolean => {
   return digitsOnly.length >= 7 && digitsOnly.length <= 15;
 };
 
-const validateSitterInfo = (sitter: typeof newSitter): boolean => {
+const validateSitterInfo = (sitter: { name: string; phone: string; relationship: string }): boolean => {
   if (!sitter.name.trim()) return false;
   if (!validatePhoneNumber(sitter.phone)) return false;
   if (!sitter.relationship.trim()) return false;
@@ -126,122 +126,142 @@ export default function SafetyScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Safety Checklist</Text>
-      </View>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <View style={styles.content}>
-          <Text style={styles.subtitle}>
-            Please confirm these safety measures before proceeding
-          </Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>Safety Checklist</Text>
+        </View>
+        
+        <ScrollView 
+          style={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={{ padding: 16 }}>
+            <Text style={styles.subtitle}>
+              Please complete the safety checklist before proceeding
+            </Text>
 
-          {/* Safety Checklist */}
-          <View style={styles.checklist}>
-            {Object.entries(SAFETY_ITEMS).map(([key, label]) => {
-              if (key === 'tripSitterInfo') return null;
-              const isRequired = REQUIRED_ITEMS.includes(key as keyof SafetyCheck);
-              return (
+            {/* Safety Checklist */}
+            <View style={styles.checklist}>
+              {REQUIRED_ITEMS.map((item) => (
                 <Pressable
-                  key={key}
+                  key={item}
                   style={styles.checkboxContainer}
-                  onPress={() => toggleCheck(key as keyof SafetyCheck)}
+                  onPress={() => toggleCheck(item)}
                 >
-                  <View style={[styles.checkbox, safetyCheck[key as keyof SafetyCheck] && styles.checkboxChecked]}>
-                    {safetyCheck[key as keyof SafetyCheck] && (
-                      <MaterialIcons name="check" size={20} color="#fff" />
+                  <View style={[
+                    styles.checkbox,
+                    safetyCheck[item] && styles.checkboxChecked
+                  ]}>
+                    {safetyCheck[item] && (
+                      <MaterialIcons name="check" size={16} color="white" />
                     )}
                   </View>
                   <Text style={styles.checkboxLabel}>
-                    {label}
-                    {isRequired && <Text style={styles.required}> *</Text>}
+                    {item === 'environment' && 'Safe environment'}
+                    {item === 'mental' && 'Mental health check'}
+                    {item === 'emergencyPlan' && 'Emergency plan'}
+                    {item === 'tripSitter' && 'Trip sitter arranged'}
+                    <Text style={styles.required}> *</Text>
                   </Text>
                 </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Trip Sitter Section */}
-          {safetyCheck.tripSitter && (
-            <View style={styles.sitterSection}>
-              <Text style={styles.sectionTitle}>Trip Sitter</Text>
-              
-              {/* Select from saved sitters */}
-              {tripSitters.length > 0 && (
-                <View style={styles.savedSitters}>
-                  <Text style={styles.sectionSubtitle}>Select a saved trip sitter:</Text>
-                  {tripSitters.map(sitter => (
-                    <Pressable
-                      key={sitter.id}
-                      style={[
-                        styles.sitterCard,
-                        selectedSitterId === sitter.id && styles.selectedSitterCard
-                      ]}
-                      onPress={() => setSelectedSitterId(sitter.id)}
-                    >
-                      <Text style={styles.sitterName}>{sitter.name}</Text>
-                      <Text style={styles.sitterDetails}>{sitter.phone}</Text>
-                      <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              {/* Add new sitter */}
-              <Pressable
-                style={styles.addSitterButton}
-                onPress={() => setShowSitterForm(!showSitterForm)}
-              >
-                <Text style={styles.addSitterText}>
-                  {showSitterForm ? 'Cancel' : 'Add New Trip Sitter'}
-                </Text>
-              </Pressable>
-
-              {showSitterForm && (
-                <View style={styles.sitterForm}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Name"
-                    value={newSitter.name}
-                    onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Phone Number"
-                    value={newSitter.phone}
-                    onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
-                    keyboardType="phone-pad"
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Relationship"
-                    value={newSitter.relationship}
-                    onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
-                  />
-                </View>
-              )}
+              ))}
             </View>
-          )}
 
-          {/* Continue Button */}
-          <Pressable
-            style={[
-              styles.continueButton,
-              !REQUIRED_ITEMS.every(item => safetyCheck[item]) && styles.disabledButton
-            ]}
-            onPress={handleContinue}
-            disabled={!REQUIRED_ITEMS.every(item => safetyCheck[item])}
-          >
-            <Text style={styles.continueButtonText}>
-              Continue to Intentions
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+            {/* Trip Sitter Section */}
+            {safetyCheck.tripSitter && (
+              <View style={styles.sitterSection}>
+                <Text style={styles.sectionTitle}>Trip Sitter</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Select a trip sitter or add a new one
+                </Text>
+
+                {/* Saved Sitters */}
+                {tripSitters.length > 0 && (
+                  <View style={styles.savedSitters}>
+                    {tripSitters.map((sitter, index) => (
+                      <Pressable
+                        key={index}
+                        style={[
+                          styles.sitterCard,
+                          safetyCheck.tripSitterInfo?.name === sitter.name && styles.selectedSitterCard
+                        ]}
+                        onPress={() => toggleCheck('tripSitterInfo')}
+                      >
+                        <Text style={styles.sitterName}>{sitter.name}</Text>
+                        <Text style={styles.sitterDetails}>{sitter.phone}</Text>
+                        <Text style={styles.sitterDetails}>{sitter.relationship}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+
+                <Pressable
+                  style={styles.addSitterButton}
+                  onPress={() => setShowSitterForm(!showSitterForm)}
+                >
+                  <Text style={styles.addSitterText}>
+                    {showSitterForm ? 'Cancel' : 'Add New Trip Sitter'}
+                  </Text>
+                </Pressable>
+
+                {showSitterForm && (
+                  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <View style={styles.sitterForm}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Name"
+                        value={newSitter.name}
+                        onChangeText={(text) => setNewSitter({ ...newSitter, name: text })}
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Phone Number"
+                        value={newSitter.phone}
+                        onChangeText={(text) => setNewSitter({ ...newSitter, phone: text })}
+                        keyboardType="phone-pad"
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Relationship"
+                        value={newSitter.relationship}
+                        onChangeText={(text) => setNewSitter({ ...newSitter, relationship: text })}
+                        returnKeyType="done"
+                        blurOnSubmit={true}
+                        onSubmitEditing={() => {
+                          Keyboard.dismiss();
+                        }}
+                      />
+                    </View>
+                  </TouchableWithoutFeedback>
+                )}
+              </View>
+            )}
+
+            {/* Continue Button */}
+            <Pressable
+              style={[
+                styles.continueButton,
+                !REQUIRED_ITEMS.every(item => safetyCheck[item]) && styles.disabledButton
+              ]}
+              onPress={handleContinue}
+              disabled={!REQUIRED_ITEMS.every(item => safetyCheck[item])}
+            >
+              <Text style={styles.continueButtonText}>
+                Continue to Intentions
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

@@ -1,0 +1,120 @@
+Feature:
+-- Report Sysytem--
+
+Change 'General Notes' name to 'General Trip Notes'
+
+think of genreal trip notes as attached to trip and intentions as attached to intentions
+
+    Create reports system(post, 7, 14, 30) + intergate with notes 
+        - There will be a report system that prompts thse user to follow up on their intentions/trip.
+            - the general notes are for the trip as a whole, and the intention notes are for the specific intention.
+            - the user can add notes during the post trip report (general + intentions)-
+            - the user can add notes during the 7, 14, 30 days post trip report (general + intentions)
+            - These post trip reports/follow up reports - for intentions and the trip 
+
+        - option to add notes during post trip report (general + intentions)-
+
+
+This format of post trip reports follows the same for both intentions and general trip notes (12 hr, non editable after)
+
+    report system 
+    - score and note optionality, 
+        - are you sure you do not want to make a note? (if no note created)
+    these notes are editable only for the next 12 hours, and then they are locked and assigned to their assigned post trip/follow up report
+        - make it obvious that they are uneditable and thererfore special, this is imoportant because those reports are special looking from the typical notes 
+            - blue progression for the report notes (light to dark)
+                - highlight the report notes with aapsiceal highlight
+            - green progression for the normal notes (light to dark)
+
+    When the general post trip report is not reported, write that out (in different letter color + italicizied ) only if it is past due and the user hsa chosen not to write one
+        - the user should be proompted with the exisitng rate now button for the follow up/post trip rports that they do not rate, expiring in 12 hours (alsdo the editable time of that note)
+        
+            Create a better visual timeline on the history screen for both types of notes (more than the simple orrder as of now)
+            - add a minimal timeline aspect that looks sleek and modern beut maintains functionality. 
+            postrtrip/follow up report notes highlighteed in the color of their tag (blue or green)
+
+    discerns between notes and report notes. 
+        - report notes only able to be created through the post trip/follow up report screen, 
+        - normal notes have normal functionality 
+    
+
+    'during trip' notes are locked
+    'post trip' notes are locked after 12 hours 
+    the same goes for the 7, 14, 30 days post trip notes 
+    otherwise notes have 'x' days after (1 day - not 1 days)
+
+
+    follow up reports should mimic the post trip reports
+    all reports have the general trip notes and intention notes, two seperate screens (can go back and forth between them)
+
+
+    Further integration later:
+    need to make the follow up reports section on home screen with upcoming follow up reports
+    header howing all upcoming follow urportsordered by date categor y
+    need to make intentions have notifications for the follow up reports
+
+    // Intentions Tab //
+    Will need to add a section on the intentions tab showing the notes/ratings needed 
+    Another card on intentions showing the percentage of ratings and the percentgage of notes created for each post-trip/follow up report (completion rate) - stat for general + intention notes seperately and then an average of both + ONE FOR RATINGS of intentions
+
+
+    Data Model Updates
+* Important note: the current data model has the tafg post-trip report assigned to ntoes takaen within 24 hours after the trip' this must change obviously to fit this new logic
+* tags must be clearly defined and anchored, seperating from 'days after' note tags (this is important for the history screen
+
+[ ] Add reportType (or tag) property to Note objects
+Values: 'post-trip', '7d', '14d', '30d', or null (for normal notes)
+Applies to both intention notes and general trip notes
+[ ] Ensure all report notes (created via post-trip/follow-up reports) are assigned the correct reportType
+[ ] Normal notes (not tied to a report) should have reportType: null or omit the property
+2. Tag Color Mapping
+[ ] Define a color mapping for each report type/tag
+Example:
+Apply to ReportSystem...
+;
+3. Note Creation & Locking Logic
+[ ] Update note creation for reports:
+When a note is created via a post-trip or follow-up report, set its reportType accordingly.
+Set a timestamp for when the note was created.
+[ ] Locking rules:
+Report notes: Editable for 12 hours after creation, then locked.
+"During trip" notes: Always locked.
+Normal notes: Editable as usual.
+4. Ratings Logic
+[ ] Ensure only intention notes (not general trip notes) can be rated
+[ ] General trip notes should never display or store a rating
+5. Timeline/History UI
+[ ] Redesign the timeline/history screen:
+Visually separate report notes and normal notes.
+For report notes, display the tag (e.g., "Post-Trip", "7d") and use the tag’s color as a highlight/accent.
+For normal notes, use a default/neutral color and no report tag.
+Clearly show locked/unlocked state for each note.
+[ ] Display overdue report prompts/messages:
+If a report is overdue and not completed, show a message in a distinct style (different color, italicized).
+6. User Prompts & Flows
+[ ] Prompt the user if they skip making a note during a report:
+"Are you sure you do not want to make a note?" (score and note are both optional)
+[ ] Show the "Rate Now or Write Note Now" button for overdue post-trip/follow-up report ratings ('Rate Now'for intentions) or ('write note now' for general trip notes/intention notes), expiring in 12 hours (matching the editable window for the note) on the husotry screen
+7. Home Screen Integration
+[ ] Add a section to the home screen for upcoming follow-up reports:
+Ordered by date and category
+Header showing all upcoming follow-up reports
+[ ] Add notification system for intentions with upcoming reports
+8. Follow-Up Reports Structure
+[ ] Ensure follow-up reports (7, 14, 30 days) mimic the post-trip report structure:
+Each report includes both general trip notes and intention notes
+Two separate screens, with navigation between them
+9. Visual Consistency
+[ ] Ensure all report notes (intention and general) use the tag color for their highlight/accent
+[ ] Ensure all normal notes use a neutral/default color
+[ ] Ensure all tags and colors are consistent across all screens and note types
+10. Testing & Polish
+[ ] Test all flows:
+Note creation, editing, locking, overdue prompts, and timeline display
+Color progression and tag display for all note types
+Ratings only on intention notes
+[ ] Polish UI for clarity and modern appearance
+
+Added:
+Change 'General Notes' name to 'General Trip Notes'
+can delete report notes from either general trip or intention notes (extra warnings and confirmation)

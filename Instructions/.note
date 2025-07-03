@@ -1,0 +1,108 @@
+syCompanion – Product Requirements (To Be Built)
+1. UI Overhaul (Supplemental Doc: UI Overhaul)
+Implement the new design system and visual language across all screens.
+Modernize all UI components for consistency, accessibility, and animation.
+Apply advanced keyboard avoidance and input focus management globally.
+Refactor any legacy UI code to match the new system.
+2. Report System (Supplemental Doc: Report System)
+Post-Trip Reports:
+Create a structured post-trip report flow, including intention ratings, general notes, and report notes.
+Lock report notes after 12 hours (editable only within this window).
+Visual tagging of report notes with tag color.
+Follow-Up Reports:
+Implement 7, 14, and 30-day follow-up reports for each trip.
+Overdue prompts and reminders for incomplete follow-ups.
+Visual progression indicators for completed/missed follow-ups.
+Integration:
+Link reports to trip history, home screen, and intention stats.
+Ensure only intention notes can be rated (enforce in UI and logic).
+3. Timeline/History Enhancements
+Advanced Grouping, Filtering, and Sorting:
+Add filters for tags, date ranges, intention completion, and report status.
+Group trips by tag, date, or intention.
+Color-Coded Visuals:
+Apply tag-based color coding to trip cards and report notes.
+Minimal, Modern Layout:
+Refactor timeline/history UI to match new design system.
+4. Home Screen Upgrades
+Upcoming Follow-Up Reports:
+Display due/overdue follow-ups with actionable prompts.
+Quick Stats:
+Show stats for completed intentions, upcoming reports, and recent trips.
+Recent Trips:
+List recent trips with direct access to reports and notes.
+5. Intentions System Expansion
+Cross-Trip Tracking:
+Visualize intention progress across multiple trips.
+Completion Stats:
+Show completion rates and upcoming ratings for each intention.
+Notification Integration:
+Remind users to rate intentions and complete follow-ups.
+6. Safety, Pre-Trip, and Active Trip Screens
+Consistent UI:
+Apply new design system and safety features.
+Minimal/Locked Trip Mode:
+Implement a mode that restricts navigation and editing during active trips.
+7. Social Media/Sharing (Future)
+Trip/Stats Sharing:
+Allow users to share anonymized trip summaries and stats.
+User Connections:
+(Future) Enable connecting with other users for support and sharing.
+8. Technical/Integration Work
+Backend Expansion:
+Prepare Node.js backend and PostgreSQL for future features (e.g., social, AI).
+AI/Voice Integration:
+(Future) Add voice note-taking and AI-powered insights.
+Calendar/Health Integration:
+(Future) Sync with device calendar and health data.
+Roadmap (Actionable Steps)
+UI Overhaul
+Complete design system implementation (see UI Overhaul doc).
+Refactor all screens/components for consistency and animation.
+Report System
+Build post-trip and follow-up report flows.
+Add note locking, visual tagging, and overdue prompts.
+Integrate with home, history, and intentions.
+Timeline/History Enhancements
+Add advanced grouping/filtering/sorting.
+Apply color coding and modern layout.
+Home Screen Upgrades
+Implement upcoming follow-ups, quick stats, and recent trips.
+Intentions System Expansion
+Add cross-trip tracking, stats, and notification logic.
+Safety/Pre-Trip/Active Trip Screens
+Refactor for new UI and implement locked trip mode.
+Social/Sharing, AI, Calendar/Health
+Plan and begin backend work for future features.
+
+
+Only one intention, screen should remove the s on history screen
+gotta tackle ui before it’s too late 
+- ui for the base of our entire app (build up only after)
+- create own components 
+
+music feature 
+
+maps psychedelic integration workbook
+social aspect
+revise long term features/plans
+
+before your trip 
+- toggle list 
+- fruits vegetables meditation, exercise, intentions, etc
+
+AI voice integration for notes 
+
+Tabs on each trip card 
+- notes
+- info
+
+
+start trip prompt (new final screen)
+- slide button
+
+rating precision for ratings
+
+tabs for each trip card with seperate info 
+
+radar chart for each trip (mapping intentions of each trip, minimum intention amount to enable)
